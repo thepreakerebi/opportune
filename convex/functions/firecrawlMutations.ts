@@ -21,6 +21,27 @@ export const saveSearchJob = internalMutation({
   },
 })
 
+export const updateSearchJobStatus = internalMutation({
+  args: {
+    jobId: v.id('searchJobs'),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('running'),
+      v.literal('completed'),
+      v.literal('failed'),
+    ),
+    errorMessage: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: args.status,
+      errorMessage: args.errorMessage,
+    })
+    return null
+  },
+})
+
 export const saveSearchResults = internalMutation({
   args: {
     jobId: v.id('searchJobs'),
