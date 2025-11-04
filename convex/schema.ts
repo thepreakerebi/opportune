@@ -8,6 +8,10 @@ export default defineSchema({
     email: v.string(),
     name: v.optional(v.string()),
     picture: v.optional(v.string()),
+    // Education level for matching opportunities
+    // Interpretation: Typically the NEXT level user is seeking (e.g., undergraduate seeking masters)
+    // For matching, we check if opportunity requirements match this level
+    // TODO: Consider splitting into currentEducationLevel and intendedEducationLevel for clarity
     educationLevel: v.optional(
       v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
     ),
@@ -40,12 +44,17 @@ export default defineSchema({
     applicationUrl: v.string(),
     region: v.optional(v.string()),
     requiredDocuments: v.array(v.string()),
+    // Essay prompts for AI-powered essay generation
+    // Optional: Can be fetched on-demand if not stored
+    // Stored here for offline access and better AI processing performance
     essayPrompts: v.optional(v.array(v.string())),
     contactInfo: v.optional(v.string()),
     imageUrl: v.optional(v.string()),
     tags: v.array(v.string()),
     sourceType: v.union(
       v.literal('general_search'),
+      // Deprecated: Profile searches are no longer automated via cron
+      // Kept for backward compatibility and manual searches
       v.literal('profile_search'),
       v.literal('crawl'),
     ),
