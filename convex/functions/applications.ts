@@ -1,21 +1,31 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
+import { auth } from '../auth'
 
+/**
+ * Get current authenticated user from Convex Auth
+ */
 async function getUserFromAuth(ctx: any) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) {
+  const authUserId = await auth.getUserId(ctx)
+  if (!authUserId) {
     return null
   }
 
-  const email = identity.email
-  if (!email) {
+  // Get the auth account to find email
+  const account = await ctx.db
+    .query('auth_accounts')
+    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
+    .first()
+
+  if (!account || !account.email) {
     return null
   }
 
+  // Find user by email from accounts
   const user = await ctx.db
     .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', email))
+    .withIndex('by_email', (q: any) => q.eq('email', account.email))
     .first()
 
   return user

@@ -1,21 +1,31 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
+import { auth } from '../auth'
 
+/**
+ * Get current authenticated user from Convex Auth
+ */
 async function getUserFromAuth(ctx: any) {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) {
+  const authUserId = await auth.getUserId(ctx)
+  if (!authUserId) {
     return null
   }
 
-  const email = identity.email
-  if (!email) {
+  // Get the auth account to find email
+  const account = await ctx.db
+    .query('auth_accounts')
+    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
+    .first()
+
+  if (!account || !account.email) {
     return null
   }
 
+  // Find user by email from accounts
   const user = await ctx.db
     .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', email))
+    .withIndex('by_email', (q: any) => q.eq('email', account.email))
     .first()
 
   return user
@@ -76,41 +86,13 @@ export const createProfile = mutation({
   },
   returns: v.id('users'),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) {
+    const user = await getUserFromAuth(ctx)
+    if (!user) {
       throw new Error('Not authenticated')
     }
 
-    const email = identity.email
-    if (!email) {
-      throw new Error('Email not found in identity')
-    }
-
-    const existing = await ctx.db
-      .query('users')
-      .withIndex('by_email', (q: any) => q.eq('email', email))
-      .first()
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        educationLevel: args.educationLevel,
-        subject: args.subject,
-        discipline: args.discipline,
-        nationality: args.nationality,
-        language: args.language,
-        academicStatus: args.academicStatus,
-        demographicTags: args.demographicTags,
-        careerInterests: args.careerInterests,
-        academicInterests: args.academicInterests,
-        updatedAt: Date.now(),
-      })
-      return existing._id
-    }
-
-    const userId = await ctx.db.insert('users', {
-      email,
-      name: identity.name ?? undefined,
-      picture: identity.pictureUrl ?? undefined,
+    // Update existing user profile
+    await ctx.db.patch(user._id, {
       educationLevel: args.educationLevel,
       subject: args.subject,
       discipline: args.discipline,
@@ -120,11 +102,10 @@ export const createProfile = mutation({
       demographicTags: args.demographicTags,
       careerInterests: args.careerInterests,
       academicInterests: args.academicInterests,
-      createdAt: Date.now(),
       updatedAt: Date.now(),
     })
 
-    return userId
+    return user._id
   },
 })
 
