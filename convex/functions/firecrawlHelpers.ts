@@ -3,6 +3,9 @@
  * Creates a tailored search query that includes user-specific criteria
  */
 export function generateProfileSearchQuery(user: {
+  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
+  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
+  // Deprecated: kept for backward compatibility
   educationLevel?: 'undergraduate' | 'masters' | 'phd'
   discipline?: string
   subject?: string
@@ -13,17 +16,47 @@ export function generateProfileSearchQuery(user: {
 }): string {
   const parts: Array<string> = []
 
-  // Add education level
-  if (user.educationLevel) {
-    if (user.educationLevel === 'undergraduate') {
-      parts.push('undergraduate OR bachelors')
-    } else if (user.educationLevel === 'masters') {
-      parts.push('masters OR graduate OR postgraduate')
+  // Add education levels (prioritize intended, include current if different)
+  const educationLevels = new Set<string>()
+  
+  // Add intended level (primary)
+  if (user.intendedEducationLevel) {
+    if (user.intendedEducationLevel === 'undergraduate') {
+      educationLevels.add('undergraduate OR bachelors')
+    } else if (user.intendedEducationLevel === 'masters') {
+      educationLevels.add('masters OR graduate OR postgraduate')
     } else {
-      // user.educationLevel must be 'phd' at this point
-      parts.push('PhD OR doctoral OR doctorate')
+      educationLevels.add('PhD OR doctoral OR doctorate')
     }
   }
+  
+  // Add current level (if different from intended)
+  // Highschool students should search for undergraduate opportunities
+  if (user.currentEducationLevel && user.currentEducationLevel !== user.intendedEducationLevel) {
+    if (user.currentEducationLevel === 'highschool') {
+      educationLevels.add('undergraduate OR bachelors')
+    } else if (user.currentEducationLevel === 'undergraduate') {
+      educationLevels.add('undergraduate OR bachelors')
+    } else if (user.currentEducationLevel === 'masters') {
+      educationLevels.add('masters OR graduate OR postgraduate')
+    } else {
+      educationLevels.add('PhD OR doctoral OR doctorate')
+    }
+  }
+  
+  // Fallback to deprecated field if new fields not set
+  if (educationLevels.size === 0 && user.educationLevel) {
+    if (user.educationLevel === 'undergraduate') {
+      educationLevels.add('undergraduate OR bachelors')
+    } else if (user.educationLevel === 'masters') {
+      educationLevels.add('masters OR graduate OR postgraduate')
+    } else {
+      educationLevels.add('PhD OR doctoral OR doctorate')
+    }
+  }
+  
+  // Add unique education level terms
+  parts.push(...Array.from(educationLevels))
 
   // Add discipline/subject
   if (user.discipline) {

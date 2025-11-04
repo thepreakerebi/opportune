@@ -3,6 +3,55 @@ import { internalAction, internalMutation } from '../_generated/server'
 import { internal } from '../_generated/api'
 
 /**
+ * Get effective education level for matching (works in mutations, no Node.js needed)
+ * Priority: intendedEducationLevel > currentEducationLevel > educationLevel (deprecated)
+ */
+function getEffectiveEducationLevel(user: {
+  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
+  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
+  educationLevel?: 'undergraduate' | 'masters' | 'phd'
+}): 'undergraduate' | 'masters' | 'phd' | undefined {
+  if (user.intendedEducationLevel) {
+    return user.intendedEducationLevel
+  }
+  // Map highschool to undergraduate for matching
+  if (user.currentEducationLevel === 'highschool') {
+    return 'undergraduate'
+  }
+  if (user.currentEducationLevel) {
+    return user.currentEducationLevel
+  }
+  return user.educationLevel
+}
+
+/**
+ * Get all education levels for a user (current and intended)
+ */
+function getAllEducationLevels(user: {
+  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
+  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
+  educationLevel?: 'undergraduate' | 'masters' | 'phd'
+}): Array<'undergraduate' | 'masters' | 'phd'> {
+  const levels = new Set<'undergraduate' | 'masters' | 'phd'>()
+  
+  // Map highschool to undergraduate for matching (highschool students seek undergrad opportunities)
+  if (user.currentEducationLevel === 'highschool') {
+    levels.add('undergraduate')
+  } else if (user.currentEducationLevel) {
+    levels.add(user.currentEducationLevel)
+  }
+  if (user.intendedEducationLevel) {
+    levels.add(user.intendedEducationLevel)
+  }
+  // Include deprecated field for backward compatibility
+  if (user.educationLevel) {
+    levels.add(user.educationLevel)
+  }
+  
+  return Array.from(levels)
+}
+
+/**
  * Keyword-based matching (for hybrid scoring)
  * Simple rule-based matching based on keyword overlap
  * This is a mutation (not an action) so it must be in a non-Node.js file
@@ -29,13 +78,28 @@ export const matchOpportunitiesToUserKeyword = internalMutation({
     const opportunities = await ctx.db.query('opportunities').collect()
     const matches: Array<{ opportunityId: any; score: number }> = []
 
+    // Get all education levels to check (both current and intended)
+    const educationLevels = getAllEducationLevels(user)
+
     for (const opp of opportunities) {
       let score = 0
 
-      if (user.educationLevel) {
+      // Check against all education levels (current and intended)
+      // Prioritize intended level matches (higher score)
+      if (educationLevels.length > 0) {
         const reqs = opp.requirements.join(' ').toLowerCase()
-        if (reqs.includes(user.educationLevel.toLowerCase())) {
-          score += 30
+        for (const level of educationLevels) {
+          if (reqs.includes(level.toLowerCase())) {
+            // Give higher score to intended level matches
+            if (level === user.intendedEducationLevel) {
+              score += 35 // Higher weight for intended level
+            } else if (level === user.currentEducationLevel) {
+              score += 25 // Lower weight for current level
+            } else {
+              score += 20 // Lowest weight for deprecated field
+            }
+            break // Only count once per opportunity
+          }
         }
       }
 

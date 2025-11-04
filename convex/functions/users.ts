@@ -3,6 +3,19 @@ import { internalMutation, internalQuery, mutation, query } from '../_generated/
 import { internal } from '../_generated/api'
 import { getAuthenticatedUser, requireAuth } from './authHelpers'
 
+const educationLevelValidator = v.optional(
+  v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
+)
+
+const currentEducationLevelValidator = v.optional(
+  v.union(
+    v.literal('highschool'),
+    v.literal('undergraduate'),
+    v.literal('masters'),
+    v.literal('phd'),
+  ),
+)
+
 export const getCurrentUser = query({
   args: {},
   returns: v.union(
@@ -11,9 +24,10 @@ export const getCurrentUser = query({
       email: v.string(),
       name: v.optional(v.string()),
       picture: v.optional(v.string()),
-      educationLevel: v.optional(
-        v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
-      ),
+      currentEducationLevel: currentEducationLevelValidator,
+      intendedEducationLevel: educationLevelValidator,
+      // Deprecated: kept for backward compatibility
+      educationLevel: educationLevelValidator,
       subject: v.optional(v.string()),
       discipline: v.optional(v.string()),
       nationality: v.optional(v.string()),
@@ -39,9 +53,10 @@ export const getCurrentUser = query({
 
 export const createProfile = mutation({
   args: {
-    educationLevel: v.optional(
-      v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
-    ),
+    currentEducationLevel: currentEducationLevelValidator,
+    intendedEducationLevel: educationLevelValidator,
+    // Deprecated: kept for backward compatibility
+    educationLevel: educationLevelValidator,
     subject: v.optional(v.string()),
     discipline: v.optional(v.string()),
     nationality: v.optional(v.string()),
@@ -62,7 +77,9 @@ export const createProfile = mutation({
 
     // Update existing user profile
     await ctx.db.patch(user._id, {
-      educationLevel: args.educationLevel,
+      currentEducationLevel: args.currentEducationLevel,
+      intendedEducationLevel: args.intendedEducationLevel,
+      educationLevel: args.educationLevel, // Deprecated
       subject: args.subject,
       discipline: args.discipline,
       nationality: args.nationality,
@@ -80,9 +97,10 @@ export const createProfile = mutation({
 
 export const updateProfile = mutation({
   args: {
-    educationLevel: v.optional(
-      v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
-    ),
+    currentEducationLevel: currentEducationLevelValidator,
+    intendedEducationLevel: educationLevelValidator,
+    // Deprecated: kept for backward compatibility
+    educationLevel: educationLevelValidator,
     subject: v.optional(v.string()),
     discipline: v.optional(v.string()),
     nationality: v.optional(v.string()),
@@ -102,7 +120,9 @@ export const updateProfile = mutation({
     const user = await requireAuth(ctx)
 
     await ctx.db.patch(user._id, {
-      educationLevel: args.educationLevel,
+      currentEducationLevel: args.currentEducationLevel,
+      intendedEducationLevel: args.intendedEducationLevel,
+      educationLevel: args.educationLevel, // Deprecated
       subject: args.subject,
       discipline: args.discipline,
       nationality: args.nationality,
@@ -173,9 +193,10 @@ export const getUserById = internalQuery({
       email: v.string(),
       name: v.optional(v.string()),
       picture: v.optional(v.string()),
-      educationLevel: v.optional(
-        v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
-      ),
+      currentEducationLevel: currentEducationLevelValidator,
+      intendedEducationLevel: educationLevelValidator,
+      // Deprecated: kept for backward compatibility
+      educationLevel: educationLevelValidator,
       subject: v.optional(v.string()),
       discipline: v.optional(v.string()),
       nationality: v.optional(v.string()),
@@ -209,9 +230,10 @@ export const getAllUsersWithProfiles = internalQuery({
     v.object({
       _id: v.id('users'),
       email: v.string(),
-      educationLevel: v.optional(
-        v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
-      ),
+      currentEducationLevel: currentEducationLevelValidator,
+      intendedEducationLevel: educationLevelValidator,
+      // Deprecated: kept for backward compatibility
+      educationLevel: educationLevelValidator,
       discipline: v.optional(v.string()),
       subject: v.optional(v.string()),
       nationality: v.optional(v.string()),
@@ -226,7 +248,8 @@ export const getAllUsersWithProfiles = internalQuery({
     
     // Return users that have at least some profile data
     return allUsers.filter((user) => 
-      user.educationLevel || user.discipline || user.subject || 
+      user.currentEducationLevel || user.intendedEducationLevel || user.educationLevel ||
+      user.discipline || user.subject || 
       (user.academicInterests && user.academicInterests.length > 0)
     )
   },

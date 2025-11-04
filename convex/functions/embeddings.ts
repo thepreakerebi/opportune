@@ -112,7 +112,15 @@ export const generateUserProfileEmbedding = internalAction({
     // Combine profile fields for embedding
     const profileParts: Array<string> = []
 
-    if (user.educationLevel) {
+    // Add education levels (both current and intended)
+    if (user.currentEducationLevel) {
+      profileParts.push(`Current Education: ${user.currentEducationLevel}`)
+    }
+    if (user.intendedEducationLevel) {
+      profileParts.push(`Seeking Education: ${user.intendedEducationLevel}`)
+    }
+    // Fallback to deprecated field if new fields not set
+    if (!user.currentEducationLevel && !user.intendedEducationLevel && user.educationLevel) {
       profileParts.push(`Education: ${user.educationLevel}`)
     }
     if (user.discipline) {

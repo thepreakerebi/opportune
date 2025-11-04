@@ -16,6 +16,7 @@ import type * as functions_alerts from "../functions/alerts.js";
 import type * as functions_applications from "../functions/applications.js";
 import type * as functions_authHelpers from "../functions/authHelpers.js";
 import type * as functions_documents from "../functions/documents.js";
+import type * as functions_educationHelpers from "../functions/educationHelpers.js";
 import type * as functions_embeddings from "../functions/embeddings.js";
 import type * as functions_firecrawl from "../functions/firecrawl.js";
 import type * as functions_firecrawlHelpers from "../functions/firecrawlHelpers.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "functions/applications": typeof functions_applications;
   "functions/authHelpers": typeof functions_authHelpers;
   "functions/documents": typeof functions_documents;
+  "functions/educationHelpers": typeof functions_educationHelpers;
   "functions/embeddings": typeof functions_embeddings;
   "functions/firecrawl": typeof functions_firecrawl;
   "functions/firecrawlHelpers": typeof functions_firecrawlHelpers;

@@ -5,6 +5,7 @@ import { openai } from '@ai-sdk/openai'
 import { v } from 'convex/values'
 import { internalAction } from '../../_generated/server'
 import { internal } from '../../_generated/api'
+import { formatEducationLevels } from '../educationHelpers'
 import { createTools } from './tools'
 
 export const applicationWorkflowAgent = internalAction({
@@ -61,7 +62,7 @@ export const applicationWorkflowAgent = internalAction({
       prompt: `Generate a complete application workflow for this scholarship opportunity.
 
 User Profile:
-- Education Level: ${user.educationLevel ?? 'Not specified'}
+- Education Levels: ${formatEducationLevels(user)}
 - Discipline: ${user.discipline ?? 'Not specified'}
 - Interests: ${user.academicInterests?.join(', ') ?? 'Not specified'}
 
@@ -222,7 +223,7 @@ export const essayGenerationAgent = internalAction({
 Prompt: ${args.prompt}
 
 User Profile:
-- Education Level: ${user.educationLevel ?? 'Not specified'}
+- Education Levels: ${formatEducationLevels(user)}
 - Discipline: ${user.discipline ?? 'Not specified'}
 - Academic Interests: ${user.academicInterests?.join(', ') ?? 'Not specified'}
 

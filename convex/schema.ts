@@ -8,10 +8,23 @@ export default defineSchema({
     email: v.string(),
     name: v.optional(v.string()),
     picture: v.optional(v.string()),
-    // Education level for matching opportunities
-    // Interpretation: Typically the NEXT level user is seeking (e.g., undergraduate seeking masters)
-    // For matching, we check if opportunity requirements match this level
-    // TODO: Consider splitting into currentEducationLevel and intendedEducationLevel for clarity
+    // Current education level (what they're currently enrolled in)
+    // Includes highschool for students preparing for undergraduate studies
+    currentEducationLevel: v.optional(
+      v.union(
+        v.literal('highschool'),
+        v.literal('undergraduate'),
+        v.literal('masters'),
+        v.literal('phd'),
+      ),
+    ),
+    // Intended education level (what they're seeking opportunities for)
+    // This is the level they want to apply to/continue at
+    intendedEducationLevel: v.optional(
+      v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
+    ),
+    // Deprecated: Use currentEducationLevel and intendedEducationLevel instead
+    // Kept for backward compatibility - will be migrated gradually
     educationLevel: v.optional(
       v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
     ),

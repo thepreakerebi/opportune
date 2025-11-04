@@ -584,6 +584,9 @@ export const runProfileSearchesForAllUsers = internalAction({
       try {
         // Generate personalized search query based on user profile
         const searchQuery = generateProfileSearchQuery({
+          currentEducationLevel: user.currentEducationLevel ?? undefined,
+          intendedEducationLevel: user.intendedEducationLevel ?? undefined,
+          // Deprecated: kept for backward compatibility
           educationLevel: user.educationLevel ?? undefined,
           discipline: user.discipline ?? undefined,
           subject: user.subject ?? undefined,

@@ -2,6 +2,54 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { internal } from '../../_generated/api'
 
+/**
+ * Get effective education level for matching (works in Node.js context)
+ * Priority: intendedEducationLevel > currentEducationLevel > educationLevel (deprecated)
+ */
+function getEffectiveEducationLevel(user: {
+  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
+  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
+  educationLevel?: 'undergraduate' | 'masters' | 'phd'
+}): 'undergraduate' | 'masters' | 'phd' | undefined {
+  if (user.intendedEducationLevel) {
+    return user.intendedEducationLevel
+  }
+  // Map highschool to undergraduate for matching
+  if (user.currentEducationLevel === 'highschool') {
+    return 'undergraduate'
+  }
+  if (user.currentEducationLevel) {
+    return user.currentEducationLevel
+  }
+  return user.educationLevel
+}
+
+/**
+ * Get all education levels for a user
+ */
+function getAllEducationLevels(user: {
+  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
+  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
+  educationLevel?: 'undergraduate' | 'masters' | 'phd'
+}): Array<'undergraduate' | 'masters' | 'phd'> {
+  const levels = new Set<'undergraduate' | 'masters' | 'phd'>()
+  
+  // Map highschool to undergraduate for matching (highschool students seek undergrad opportunities)
+  if (user.currentEducationLevel === 'highschool') {
+    levels.add('undergraduate')
+  } else if (user.currentEducationLevel) {
+    levels.add(user.currentEducationLevel)
+  }
+  if (user.intendedEducationLevel) {
+    levels.add(user.intendedEducationLevel)
+  }
+  if (user.educationLevel) {
+    levels.add(user.educationLevel)
+  }
+  
+  return Array.from(levels)
+}
+
 export function createTools(ctx: any) {
   return {
     getUserProfile: tool({
@@ -135,11 +183,26 @@ export function createTools(ctx: any) {
         const reasons: Array<string> = []
         let score = 0
 
-        if (user.educationLevel) {
+        // Check against all education levels (current and intended)
+        const educationLevels = getAllEducationLevels(user)
+        if (educationLevels.length > 0) {
           const reqs = opp.requirements.join(' ').toLowerCase()
-          if (reqs.includes(user.educationLevel.toLowerCase())) {
-            score += 30
-          } else {
+          let matched = false
+          for (const level of educationLevels) {
+            if (reqs.includes(level.toLowerCase())) {
+              matched = true
+              // Give higher score to intended level matches
+              if (level === user.intendedEducationLevel) {
+                score += 35
+              } else if (level === user.currentEducationLevel) {
+                score += 25
+              } else {
+                score += 20
+              }
+              break
+            }
+          }
+          if (!matched) {
             reasons.push('Education level may not match requirements')
           }
         }

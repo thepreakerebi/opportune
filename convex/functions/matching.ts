@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { v } from 'convex/values'
 import { internalAction } from '../_generated/server'
 import { internal } from '../_generated/api'
+import { formatEducationLevels, getAllEducationLevels, getEffectiveEducationLevel } from './educationHelpers'
 
 /**
  * AI-Powered Opportunity Matching Workflow
@@ -131,8 +132,10 @@ export const matchOpportunitiesForUser = internalAction({
     }
 
     // Build user profile summary (reused for all batches)
+    // Use both current and intended education levels for comprehensive matching
+    const educationLevelsText = formatEducationLevels(user)
     const userProfileSummary = `
-Education Level: ${user.educationLevel ?? 'Not specified'}
+Education Levels: ${educationLevelsText}
 Subject: ${user.subject ?? 'Not specified'}
 Discipline: ${user.discipline ?? 'Not specified'}
 Nationality: ${user.nationality ?? 'Not specified'}
@@ -234,7 +237,7 @@ ${opportunitiesSummary}
 Your task:
 1. Evaluate each opportunity against the user's profile
 2. Score each match from 0-100 based on:
-   - Education level compatibility
+   - Education level compatibility (consider both current and intended levels)
    - Subject/discipline alignment
    - Geographic eligibility (nationality/region)
    - Interest alignment
@@ -243,6 +246,8 @@ Your task:
 3. Provide clear reasoning for each match
 4. Identify specific eligibility factors
 5. Note any potential concerns or requirements that might be difficult to meet
+
+Match opportunities that align with either the user's current education level (for continuing education) or intended education level (for advancement). Prioritize intended level matches but also include relevant current level opportunities.
 
 Only include opportunities with a score of 30 or higher. Focus on opportunities where the user has a realistic chance of success.
 
@@ -344,7 +349,7 @@ ${opportunitiesSummary}
 Your task:
 1. Evaluate each opportunity against the user's profile
 2. Score each match from 0-100 based on:
-   - Education level compatibility
+   - Education level compatibility (consider both current and intended levels)
    - Subject/discipline alignment
    - Geographic eligibility (nationality/region)
    - Interest alignment
@@ -353,6 +358,8 @@ Your task:
 3. Provide clear reasoning for each match
 4. Identify specific eligibility factors
 5. Note any potential concerns or requirements that might be difficult to meet
+
+Match opportunities that align with either the user's current education level (for continuing education) or intended education level (for advancement). Prioritize intended level matches but also include relevant current level opportunities.
 
 Only include opportunities with a score of 30 or higher. Focus on opportunities where the user has a realistic chance of success.
 
