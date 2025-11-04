@@ -3,28 +3,6 @@ import { z } from 'zod'
 import { internal } from '../../_generated/api'
 
 /**
- * Get effective education level for matching (works in Node.js context)
- * Priority: intendedEducationLevel > currentEducationLevel > educationLevel (deprecated)
- */
-function getEffectiveEducationLevel(user: {
-  currentEducationLevel?: 'highschool' | 'undergraduate' | 'masters' | 'phd'
-  intendedEducationLevel?: 'undergraduate' | 'masters' | 'phd'
-  educationLevel?: 'undergraduate' | 'masters' | 'phd'
-}): 'undergraduate' | 'masters' | 'phd' | undefined {
-  if (user.intendedEducationLevel) {
-    return user.intendedEducationLevel
-  }
-  // Map highschool to undergraduate for matching
-  if (user.currentEducationLevel === 'highschool') {
-    return 'undergraduate'
-  }
-  if (user.currentEducationLevel) {
-    return user.currentEducationLevel
-  }
-  return user.educationLevel
-}
-
-/**
  * Get all education levels for a user
  */
 function getAllEducationLevels(user: {
@@ -118,7 +96,7 @@ export function createTools(ctx: any) {
         opportunityId: z.string().describe('The opportunity ID for context'),
         maxLength: z.number().optional().describe('Maximum word count for the essay'),
       }),
-      execute: async ({ prompt, userId, opportunityId, maxLength }) => {
+      execute: ({ prompt, userId, opportunityId, maxLength }) => {
         return {
           draft: '',
           wordCount: 0,

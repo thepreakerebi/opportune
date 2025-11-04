@@ -15,7 +15,7 @@ export const validateOpportunityData = internalMutation({
     valid: v.boolean(),
     errors: v.array(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: (ctx, args) => {
     const errors: Array<string> = []
 
     if (!args.title || args.title.trim().length === 0) {
@@ -80,7 +80,7 @@ export const validateProfileData = internalMutation({
     valid: v.boolean(),
     errors: v.array(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: (ctx, args) => {
     const errors: Array<string> = []
 
     if (args.academicStatus?.gpa !== undefined) {

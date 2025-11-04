@@ -219,7 +219,7 @@ export const extractOpportunitiesFromSearch = internalAction({
       ),
     }),
   ),
-  handler: async (ctx, args): Promise<Array<{
+  handler: (ctx, args): Array<{
     title: string
     provider: string
     description: string
@@ -234,7 +234,7 @@ export const extractOpportunitiesFromSearch = internalAction({
     essayPrompts?: Array<string>
     contactInfo?: string
     imageUrl?: string
-  }>> => {
+  }> => {
     const opportunities: Array<{
       title: string
       provider: string
@@ -551,7 +551,7 @@ export const scrapeOpportunityUrl = internalAction({
     description: v.optional(v.string()),
     content: v.optional(v.string()),
   }),
-  handler: async (ctx, args): Promise<{ title?: string; description?: string; content?: string }> => {
+  handler: (ctx, args): { title?: string; description?: string; content?: string } => {
     // This would use Firecrawl's scrape endpoint
     // For now, return placeholder
     return {
