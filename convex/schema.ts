@@ -22,6 +22,8 @@ export default defineSchema({
     demographicTags: v.optional(v.array(v.string())),
     careerInterests: v.optional(v.array(v.string())),
     academicInterests: v.optional(v.array(v.string())),
+    profileEmbedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_email', ['email']),
@@ -45,12 +47,18 @@ export default defineSchema({
       v.literal('profile_search'),
       v.literal('crawl'),
     ),
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
     lastUpdated: v.number(),
     createdAt: v.number(),
   })
     .index('by_deadline', ['deadline'])
     .index('by_sourceType', ['sourceType'])
-    .index('by_tags', ['tags']),
+    .index('by_tags', ['tags'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 1536,
+    }),
 
   applications: defineTable({
     userId: v.id('users'),
@@ -98,6 +106,8 @@ export default defineSchema({
       }),
     ),
     tags: v.optional(v.array(v.string())),
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index('by_userId', ['userId'])

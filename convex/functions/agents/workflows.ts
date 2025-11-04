@@ -126,8 +126,10 @@ export const opportunityMatchingAgent = internalAction({
 
     const tools = createTools(ctx)
 
+    // Use GPT-4o-mini for initial classification/matching (cost-effective)
+    // Fall back to GPT-4o only if complex reasoning needed
     const result = await generateText({
-      model: openai('gpt-4o'),
+      model: openai('gpt-4o-mini'),
       tools,
       stopWhen: stepCountIs(5),
       prompt: `Match scholarship opportunities to this user profile:
@@ -143,7 +145,7 @@ User Profile:
 Classify opportunities and score them based on match quality. Tag high-scoring opportunities as "Recommended" or "For You".`,
     })
 
-    const matches: any = await ctx.runMutation(internal.functions.matching.matchOpportunitiesToUser, {
+    const matches: any = await ctx.runAction(internal.functions.matching.matchOpportunitiesToUser as any, {
       userId: args.userId,
     })
 

@@ -370,3 +370,40 @@ export const getUserDocumentsInternal = internalQuery({
   },
 })
 
+export const getDocumentByIdInternal = internalQuery({
+  args: {
+    documentId: v.id('documents'),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id('documents'),
+      userId: v.id('users'),
+      name: v.string(),
+      type: v.union(
+        v.literal('cv'),
+        v.literal('transcript'),
+        v.literal('reference'),
+        v.literal('passport'),
+        v.literal('certificate'),
+        v.literal('essay'),
+        v.literal('other'),
+      ),
+      storageId: v.id('_storage'),
+      metadata: v.optional(
+        v.object({
+          size: v.number(),
+          contentType: v.string(),
+        }),
+      ),
+      tags: v.optional(v.array(v.string())),
+      embedding: v.optional(v.array(v.number())),
+      embeddingText: v.optional(v.string()),
+      createdAt: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.documentId)
+  },
+})
+

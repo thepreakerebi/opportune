@@ -225,11 +225,30 @@ export const createOpportunity = mutation({
   returns: v.id('opportunities'),
   handler: async (ctx, args) => {
     const now = Date.now()
-    return await ctx.db.insert('opportunities', {
+    // Generate embedding text for future embedding generation
+    const embeddingText = [
+      args.title,
+      args.provider,
+      args.description,
+      args.requirements.join(' '),
+      args.region ?? '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+
+    const opportunityId = await ctx.db.insert('opportunities', {
       ...args,
+      embeddingText,
       lastUpdated: now,
       createdAt: now,
     })
+
+    // Schedule embedding generation asynchronously
+    await ctx.scheduler.runAfter(0, (internal.functions as any).embeddings.generateOpportunityEmbedding, {
+      opportunityId,
+    })
+
+    return opportunityId
   },
 })
 
@@ -351,15 +370,67 @@ export const bulkInsertOpportunities = internalMutation({
     const ids: Array<Id<'opportunities'>> = []
 
     for (const opp of args.opportunities) {
+      // Generate embedding text for future embedding generation
+      const embeddingText = [
+        opp.title,
+        opp.provider,
+        opp.description,
+        opp.requirements.join(' '),
+        opp.region ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+
       const id = await ctx.db.insert('opportunities', {
         ...opp,
+        embeddingText,
         lastUpdated: now,
         createdAt: now,
       })
       ids.push(id)
+
+      // Schedule embedding generation asynchronously
+      await ctx.scheduler.runAfter(0, (internal.functions as any).embeddings.generateOpportunityEmbedding, {
+        opportunityId: id,
+      })
     }
 
     return ids
+  },
+})
+
+export const getOpportunitiesWithoutEmbeddings = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('opportunities'),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const allOpportunities = await ctx.db.query('opportunities').collect()
+    const withoutEmbeddings = allOpportunities
+      .filter((opp) => !opp.embedding || opp.embedding.length === 0)
+      .slice(0, args.limit ?? 50)
+    return withoutEmbeddings.map((opp) => ({ _id: opp._id }))
+  },
+})
+
+export const getAllOpportunitiesWithEmbeddings = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id('opportunities'),
+      embedding: v.optional(v.array(v.number())),
+    }),
+  ),
+  handler: async (ctx) => {
+    const allOpportunities = await ctx.db.query('opportunities').collect()
+    return allOpportunities.map((opp) => ({
+      _id: opp._id,
+      embedding: opp.embedding,
+    }))
   },
 })
 

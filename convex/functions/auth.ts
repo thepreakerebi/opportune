@@ -16,7 +16,7 @@ export const handleGoogleAuth = internalAction({
       picture: args.picture,
     })
 
-    await ctx.runMutation(internal.functions.matching.tagRecommendedOpportunities, {
+    await ctx.runAction(internal.functions.matching.tagRecommendedOpportunities as any, {
       userId,
     })
 
