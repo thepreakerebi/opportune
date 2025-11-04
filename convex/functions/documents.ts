@@ -1,35 +1,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
-import { auth } from '../auth'
-
-/**
- * Get current authenticated user from Convex Auth
- */
-async function getUserFromAuth(ctx: any) {
-  const authUserId = await auth.getUserId(ctx)
-  if (!authUserId) {
-    return null
-  }
-
-  // Get the auth account to find email
-  const account = await ctx.db
-    .query('auth_accounts')
-    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
-    .first()
-
-  if (!account || !account.email) {
-    return null
-  }
-
-  // Find user by email from accounts
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', account.email))
-    .first()
-
-  return user
-}
+import { requireAuth, requireOwnership } from './authHelpers'
 
 export const getUserDocuments = query({
   args: {},
@@ -59,10 +31,7 @@ export const getUserDocuments = query({
     }),
   ),
   handler: async (ctx) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('documents')
@@ -110,10 +79,7 @@ export const getDocumentsByType = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('documents')
@@ -129,15 +95,15 @@ export const getDocumentUrl = query({
   },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const document = await ctx.db.get(args.documentId)
-    if (!document || document.userId !== user._id) {
+    if (!document) {
       return null
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, document.userId, 'Document')
 
     return await ctx.storage.getUrl(document.storageId)
   },
@@ -166,10 +132,7 @@ export const uploadDocument = mutation({
   },
   returns: v.id('documents'),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db.insert('documents', {
       userId: user._id,
@@ -191,15 +154,15 @@ export const updateDocumentMetadata = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const document = await ctx.db.get(args.documentId)
-    if (!document || document.userId !== user._id) {
+    if (!document) {
       throw new Error('Document not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, document.userId, 'Document')
 
     await ctx.db.patch(args.documentId, {
       name: args.name,
@@ -216,15 +179,15 @@ export const deleteDocument = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const document = await ctx.db.get(args.documentId)
-    if (!document || document.userId !== user._id) {
+    if (!document) {
       throw new Error('Document not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, document.userId, 'Document')
 
     await ctx.storage.delete(document.storageId)
     await ctx.db.delete(args.documentId)
@@ -247,15 +210,15 @@ export const matchDocumentsToApplication = mutation({
     missing: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       throw new Error('Application not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     const opportunity = await ctx.db.get(application.opportunityId)
     if (!opportunity) {

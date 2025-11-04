@@ -2,36 +2,8 @@ import { v } from 'convex/values'
 import { paginationOptsValidator } from 'convex/server'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
-import { auth } from '../auth'
+import { requireAuth } from './authHelpers'
 import type { Id } from '../_generated/dataModel'
-
-/**
- * Get current authenticated user from Convex Auth
- */
-async function getUserFromAuth(ctx: any) {
-  const authUserId = await auth.getUserId(ctx)
-  if (!authUserId) {
-    return null
-  }
-
-  // Get the auth account to find email
-  const account = await ctx.db
-    .query('auth_accounts')
-    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
-    .first()
-
-  if (!account || !account.email) {
-    return null
-  }
-
-  // Find user by email from accounts
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', account.email))
-    .first()
-
-  return user
-}
 
 export const listOpportunities = query({
   args: {
@@ -197,10 +169,8 @@ export const getRecommendedOpportunities = query({
     continueCursor: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    // Require authentication for personalized recommendations
+    await requireAuth(ctx)
 
     return await ctx.db
       .query('opportunities')
@@ -234,6 +204,10 @@ export const createOpportunity = mutation({
   },
   returns: v.id('opportunities'),
   handler: async (ctx, args) => {
+    // Require authentication to create opportunities
+    // Note: In production, you may want to add admin role checks
+    await requireAuth(ctx)
+
     const now = Date.now()
     // Generate embedding text for future embedding generation
     const embeddingText = [
@@ -281,6 +255,15 @@ export const updateOpportunity = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    // Require authentication to update opportunities
+    // Note: In production, you may want to add admin role checks
+    await requireAuth(ctx)
+
+    const opportunity = await ctx.db.get(args.opportunityId)
+    if (!opportunity) {
+      throw new Error('Opportunity not found')
+    }
+
     const { opportunityId, ...updates } = args
     await ctx.db.patch(opportunityId, {
       ...updates,
@@ -297,6 +280,10 @@ export const tagOpportunity = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    // Require authentication to tag opportunities
+    // Note: In production, you may want to add admin role checks
+    await requireAuth(ctx)
+
     const opportunity = await ctx.db.get(args.opportunityId)
     if (!opportunity) {
       throw new Error('Opportunity not found')
@@ -441,6 +428,45 @@ export const getAllOpportunitiesWithEmbeddings = internalQuery({
       _id: opp._id,
       embedding: opp.embedding,
     }))
+  },
+})
+
+/**
+ * Get all opportunities created after a specific timestamp
+ * Used for matching recent opportunities to users
+ */
+export const getAllRecentOpportunities = internalQuery({
+  args: {
+    sinceTimestamp: v.number(),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('opportunities'),
+      title: v.string(),
+      provider: v.string(),
+      description: v.string(),
+      requirements: v.array(v.string()),
+      awardAmount: v.optional(v.number()),
+      deadline: v.string(),
+      applicationUrl: v.string(),
+      region: v.optional(v.string()),
+      requiredDocuments: v.array(v.string()),
+      essayPrompts: v.optional(v.array(v.string())),
+      contactInfo: v.optional(v.string()),
+      imageUrl: v.optional(v.string()),
+      tags: v.array(v.string()),
+      sourceType: v.union(
+        v.literal('general_search'),
+        v.literal('profile_search'),
+        v.literal('crawl'),
+      ),
+      lastUpdated: v.number(),
+      createdAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const allOpportunities = await ctx.db.query('opportunities').collect()
+    return allOpportunities.filter((opp) => opp.createdAt >= args.sinceTimestamp)
   },
 })
 

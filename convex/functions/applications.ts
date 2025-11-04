@@ -1,35 +1,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
-import { auth } from '../auth'
-
-/**
- * Get current authenticated user from Convex Auth
- */
-async function getUserFromAuth(ctx: any) {
-  const authUserId = await auth.getUserId(ctx)
-  if (!authUserId) {
-    return null
-  }
-
-  // Get the auth account to find email
-  const account = await ctx.db
-    .query('auth_accounts')
-    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
-    .first()
-
-  if (!account || !account.email) {
-    return null
-  }
-
-  // Find user by email from accounts
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', account.email))
-    .first()
-
-  return user
-}
+import { requireAuth, requireOwnership } from './authHelpers'
 
 export const getUserApplications = query({
   args: {},
@@ -59,10 +31,7 @@ export const getUserApplications = query({
     }),
   ),
   handler: async (ctx) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('applications')
@@ -103,15 +72,15 @@ export const getApplicationById = query({
     v.null(),
   ),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       return null
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     return application
   },
@@ -152,10 +121,7 @@ export const getApplicationsByStatus = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('applications')
@@ -173,10 +139,7 @@ export const createApplication = mutation({
   },
   returns: v.id('applications'),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const opportunity = await ctx.db.get(args.opportunityId)
     if (!opportunity) {
@@ -230,15 +193,15 @@ export const updateApplicationStatus = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       throw new Error('Application not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     await ctx.db.patch(args.applicationId, {
       status: args.status,
@@ -258,15 +221,15 @@ export const updateChecklistItem = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       throw new Error('Application not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     const checklist = [...application.checklist]
     if (args.itemIndex >= 0 && args.itemIndex < checklist.length) {
@@ -296,15 +259,15 @@ export const addApplicationNote = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       throw new Error('Application not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     const existingNotes = application.notes ?? ''
     const newNotes = existingNotes ? `${existingNotes}\n${args.note}` : args.note
@@ -324,15 +287,15 @@ export const deleteApplication = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const application = await ctx.db.get(args.applicationId)
-    if (!application || application.userId !== user._id) {
+    if (!application) {
       throw new Error('Application not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, application.userId, 'Application')
 
     await ctx.db.delete(args.applicationId)
     return null

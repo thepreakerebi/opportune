@@ -59,7 +59,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         })
 
         // Schedule profile matching if profile was updated
-        await ctx.scheduler.runAfter(0, internal.functions.matching.tagRecommendedOpportunities as any, {
+        await ctx.scheduler.runAfter(0, (internal.functions as any).matchingMutations.tagRecommendedOpportunities, {
           userId: existing._id,
         })
       } else {
@@ -73,7 +73,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         })
 
         // Schedule profile matching for new user
-        await ctx.scheduler.runAfter(0, internal.functions.matching.tagRecommendedOpportunities as any, {
+        await ctx.scheduler.runAfter(0, (internal.functions as any).matchingMutations.tagRecommendedOpportunities, {
           userId,
         })
       }

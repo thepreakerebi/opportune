@@ -124,36 +124,30 @@ export const opportunityMatchingAgent = internalAction({
       throw new Error('User not found')
     }
 
-    const tools = createTools(ctx)
-
-    // Use GPT-4o-mini for initial classification/matching (cost-effective)
-    // Fall back to GPT-4o only if complex reasoning needed
-    const result = await generateText({
-      model: openai('gpt-4o-mini'),
-      tools,
-      stopWhen: stepCountIs(5),
-      prompt: `Match scholarship opportunities to this user profile:
-
-User Profile:
-- Education Level: ${user.educationLevel ?? 'Not specified'}
-- Subject: ${user.subject ?? 'Not specified'}
-- Discipline: ${user.discipline ?? 'Not specified'}
-- Nationality: ${user.nationality ?? 'Not specified'}
-- Academic Interests: ${user.academicInterests?.join(', ') ?? 'Not specified'}
-- Career Interests: ${user.careerInterests?.join(', ') ?? 'Not specified'}
-
-Classify opportunities and score them based on match quality. Tag high-scoring opportunities as "Recommended" or "For You".`,
+    // Get all opportunities for matching
+    const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+    const allOpportunities = await ctx.runQuery(internal.functions.opportunities.getAllRecentOpportunities, {
+      sinceTimestamp: recentCutoff,
     })
 
-    const matches: any = await ctx.runAction(internal.functions.matching.matchOpportunitiesToUser as any, {
+    if (allOpportunities.length === 0) {
+      return {
+        matchedOpportunities: [],
+      }
+    }
+
+    // Use the new AI-powered matching function
+    const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
       userId: args.userId,
+      opportunityIds: allOpportunities.map((opp) => opp._id),
+      batchSize: 20,
     })
 
     return {
-      matchedOpportunities: matches.map((m: any) => ({
+      matchedOpportunities: matchingResult.matches.map((m) => ({
         opportunityId: m.opportunityId,
         score: m.score,
-        reasoning: `Match score: ${m.score}`,
+        reasoning: m.reasoning,
       })),
     }
   },

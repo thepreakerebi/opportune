@@ -1,35 +1,7 @@
 import { v } from 'convex/values'
 import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
 import { internal } from '../_generated/api'
-import { auth } from '../auth'
-
-/**
- * Get current authenticated user from Convex Auth
- */
-async function getUserFromAuth(ctx: any) {
-  const authUserId = await auth.getUserId(ctx)
-  if (!authUserId) {
-    return null
-  }
-
-  // Get the auth account to find email
-  const account = await ctx.db
-    .query('auth_accounts')
-    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
-    .first()
-
-  if (!account || !account.email) {
-    return null
-  }
-
-  // Find user by email from accounts
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', account.email))
-    .first()
-
-  return user
-}
+import { getAuthenticatedUser, requireAuth } from './authHelpers'
 
 export const getCurrentUser = query({
   args: {},
@@ -61,7 +33,7 @@ export const getCurrentUser = query({
     v.null(),
   ),
   handler: async (ctx) => {
-    return await getUserFromAuth(ctx)
+    return await getAuthenticatedUser(ctx)
   },
 })
 
@@ -86,10 +58,7 @@ export const createProfile = mutation({
   },
   returns: v.id('users'),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     // Update existing user profile
     await ctx.db.patch(user._id, {
@@ -130,10 +99,7 @@ export const updateProfile = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     await ctx.db.patch(user._id, {
       educationLevel: args.educationLevel,
@@ -156,10 +122,7 @@ export const deleteProfile = mutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     await ctx.db.delete(user._id)
     return null
@@ -233,5 +196,38 @@ export const getUserById = internalQuery({
   ),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId)
+  },
+})
+
+/**
+ * Get all users with completed profiles
+ * Used for daily profile searches and matching
+ */
+export const getAllUsersWithProfiles = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id('users'),
+      email: v.string(),
+      educationLevel: v.optional(
+        v.union(v.literal('undergraduate'), v.literal('masters'), v.literal('phd')),
+      ),
+      discipline: v.optional(v.string()),
+      subject: v.optional(v.string()),
+      nationality: v.optional(v.string()),
+      academicInterests: v.optional(v.array(v.string())),
+      careerInterests: v.optional(v.array(v.string())),
+      demographicTags: v.optional(v.array(v.string())),
+    }),
+  ),
+  handler: async (ctx) => {
+    // Get all users - filtering will happen in the search query generation
+    const allUsers = await ctx.db.query('users').collect()
+    
+    // Return users that have at least some profile data
+    return allUsers.filter((user) => 
+      user.educationLevel || user.discipline || user.subject || 
+      (user.academicInterests && user.academicInterests.length > 0)
+    )
   },
 })

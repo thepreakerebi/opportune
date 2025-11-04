@@ -1,35 +1,6 @@
 import { v } from 'convex/values'
 import { internalMutation, mutation, query } from '../_generated/server'
-import { internal } from '../_generated/api'
-import { auth } from '../auth'
-
-/**
- * Get current authenticated user from Convex Auth
- */
-async function getUserFromAuth(ctx: any) {
-  const authUserId = await auth.getUserId(ctx)
-  if (!authUserId) {
-    return null
-  }
-
-  // Get the auth account to find email
-  const account = await ctx.db
-    .query('auth_accounts')
-    .withIndex('by_userId', (q: any) => q.eq('userId', authUserId))
-    .first()
-
-  if (!account || !account.email) {
-    return null
-  }
-
-  // Find user by email from accounts
-  const user = await ctx.db
-    .query('users')
-    .withIndex('by_email', (q: any) => q.eq('email', account.email))
-    .first()
-
-  return user
-}
+import { requireAuth, requireOwnership } from './authHelpers'
 
 export const getUserAlerts = query({
   args: {},
@@ -53,10 +24,7 @@ export const getUserAlerts = query({
     }),
   ),
   handler: async (ctx) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('alerts')
@@ -90,10 +58,7 @@ export const getUpcomingAlerts = query({
     }),
   ),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     const now = Date.now()
     const futureDate = now + args.days * 24 * 60 * 60 * 1000
@@ -131,10 +96,7 @@ export const getIncompleteAlerts = query({
     }),
   ),
   handler: async (ctx) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db
       .query('alerts')
@@ -160,10 +122,7 @@ export const createAlert = mutation({
   },
   returns: v.id('alerts'),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    const user = await requireAuth(ctx)
 
     return await ctx.db.insert('alerts', {
       userId: user._id,
@@ -185,15 +144,15 @@ export const markAlertComplete = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const alert = await ctx.db.get(args.alertId)
-    if (!alert || alert.userId !== user._id) {
+    if (!alert) {
       throw new Error('Alert not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, alert.userId, 'Alert')
 
     await ctx.db.patch(args.alertId, {
       completed: true,
@@ -209,15 +168,15 @@ export const deleteAlert = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getUserFromAuth(ctx)
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+    await requireAuth(ctx)
 
     const alert = await ctx.db.get(args.alertId)
-    if (!alert || alert.userId !== user._id) {
+    if (!alert) {
       throw new Error('Alert not found')
     }
+
+    // Verify ownership
+    await requireOwnership(ctx, alert.userId, 'Alert')
 
     await ctx.db.delete(args.alertId)
     return null

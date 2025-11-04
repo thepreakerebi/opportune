@@ -1,8 +1,9 @@
 'use node'
 
 import { v } from 'convex/values'
-import { internalAction } from '../_generated/server'
+import { internalAction, internalMutation } from '../_generated/server'
 import { internal } from '../_generated/api'
+import { generateProfileSearchQuery } from './firecrawlHelpers'
 
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY
 const FIRECRAWL_API_URL = 'https://api.firecrawl.dev/v2/search'
@@ -75,7 +76,8 @@ export const runGeneralSearch = internalAction({
         sourceType: 'general_search',
       })
 
-      // Save results
+      // Save ALL opportunities (both matched and unmatched will be saved)
+      // Matching and tagging happens separately after all searches complete
       await ctx.runMutation(internal.functions.firecrawlMutations.saveSearchResults, {
         jobId,
         opportunities,
@@ -162,7 +164,8 @@ export const runProfileSearch = internalAction({
         sourceType: 'profile_search',
       })
 
-      // Save results
+      // Save ALL opportunities (both matched and unmatched will be saved)
+      // Matching and tagging happens separately after all searches complete
       await ctx.runMutation(internal.functions.firecrawlMutations.saveSearchResults, {
         jobId,
         opportunities,
@@ -301,11 +304,10 @@ export const extractOpportunitiesFromSearch = internalAction({
         // Extract region
         const region = extractRegion(description, jsonData)
 
-        // Determine tags based on source type
+        // Don't tag opportunities during extraction
+        // Tags will be added after matching runs
+        // This ensures ALL opportunities are saved (matched and unmatched)
         const tags: Array<string> = []
-        if (args.sourceType === 'profile_search') {
-          tags.push('Recommended')
-        }
 
         opportunities.push({
           title,
@@ -557,6 +559,57 @@ export const scrapeOpportunityUrl = internalAction({
       description: undefined,
       content: undefined,
     }
+  },
+})
+
+/**
+ * Run profile searches for all users
+ * Called daily by cron to run personalized searches for each user
+ */
+export const runProfileSearchesForAllUsers = internalAction({
+  args: {},
+  returns: v.object({
+    usersProcessed: v.number(),
+    errors: v.array(v.string()),
+  }),
+  handler: async (ctx, args): Promise<{ usersProcessed: number; errors: Array<string> }> => {
+    // Get all users with profiles
+    const users = await ctx.runQuery(internal.functions.users.getAllUsersWithProfiles, {})
+
+    let usersProcessed = 0
+    const errors: Array<string> = []
+
+    // Run profile search for each user
+    for (const user of users) {
+      try {
+        // Generate personalized search query based on user profile
+        const searchQuery = generateProfileSearchQuery({
+          educationLevel: user.educationLevel ?? undefined,
+          discipline: user.discipline ?? undefined,
+          subject: user.subject ?? undefined,
+          nationality: user.nationality ?? undefined,
+          academicInterests: user.academicInterests ?? undefined,
+          careerInterests: user.careerInterests ?? undefined,
+          demographicTags: user.demographicTags ?? undefined,
+        })
+
+        // Run the profile search
+        await ctx.runAction(internal.functions.firecrawl.runProfileSearch, {
+          userId: user._id,
+          searchQuery,
+          limit: 30,
+        })
+
+        usersProcessed++
+      } catch (error: any) {
+        const errorMsg = `Error running profile search for user ${user._id}: ${error.message}`
+        console.error(errorMsg)
+        errors.push(errorMsg)
+        // Continue with other users even if one fails
+      }
+    }
+
+    return { usersProcessed, errors }
   },
 })
 
