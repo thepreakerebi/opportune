@@ -1,6 +1,6 @@
 import { v } from 'convex/values'
 import { paginationOptsValidator } from 'convex/server'
-import { internalMutation, internalQuery, mutation, query } from '../_generated/server'
+import { internalMutation, internalQuery, query } from '../_generated/server'
 import { internal } from '../_generated/api'
 import { requireAuth } from './authHelpers'
 import type { Id } from '../_generated/dataModel'
@@ -178,126 +178,6 @@ export const getRecommendedOpportunities = query({
       .filter((q: any) => q.field('tags').includes('For You'))
       .order('asc')
       .paginate(args.paginationOpts)
-  },
-})
-
-export const createOpportunity = mutation({
-  args: {
-    title: v.string(),
-    provider: v.string(),
-    description: v.string(),
-    requirements: v.array(v.string()),
-    awardAmount: v.optional(v.number()),
-    deadline: v.string(),
-    applicationUrl: v.string(),
-    region: v.optional(v.string()),
-    requiredDocuments: v.array(v.string()),
-    essayPrompts: v.optional(v.array(v.string())),
-    contactInfo: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    tags: v.array(v.string()),
-    sourceType: v.union(
-      v.literal('general_search'),
-      v.literal('profile_search'),
-      v.literal('crawl'),
-    ),
-  },
-  returns: v.id('opportunities'),
-  handler: async (ctx, args) => {
-    // Require authentication to create opportunities
-    // Note: In production, you may want to add admin role checks
-    await requireAuth(ctx)
-
-    const now = Date.now()
-    // Generate embedding text for future embedding generation
-    const embeddingText = [
-      args.title,
-      args.provider,
-      args.description,
-      args.requirements.join(' '),
-      args.region ?? '',
-    ]
-      .filter(Boolean)
-      .join(' ')
-
-    const opportunityId = await ctx.db.insert('opportunities', {
-      ...args,
-      embeddingText,
-      lastUpdated: now,
-      createdAt: now,
-    })
-
-    // Schedule embedding generation asynchronously
-    await ctx.scheduler.runAfter(0, (internal.functions as any).embeddings.generateOpportunityEmbedding, {
-      opportunityId,
-    })
-
-    return opportunityId
-  },
-})
-
-export const updateOpportunity = mutation({
-  args: {
-    opportunityId: v.id('opportunities'),
-    title: v.optional(v.string()),
-    provider: v.optional(v.string()),
-    description: v.optional(v.string()),
-    requirements: v.optional(v.array(v.string())),
-    awardAmount: v.optional(v.number()),
-    deadline: v.optional(v.string()),
-    applicationUrl: v.optional(v.string()),
-    region: v.optional(v.string()),
-    requiredDocuments: v.optional(v.array(v.string())),
-    essayPrompts: v.optional(v.array(v.string())),
-    contactInfo: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    tags: v.optional(v.array(v.string())),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    // Require authentication to update opportunities
-    // Note: In production, you may want to add admin role checks
-    await requireAuth(ctx)
-
-    const opportunity = await ctx.db.get(args.opportunityId)
-    if (!opportunity) {
-      throw new Error('Opportunity not found')
-    }
-
-    const { opportunityId, ...updates } = args
-    await ctx.db.patch(opportunityId, {
-      ...updates,
-      lastUpdated: Date.now(),
-    })
-    return null
-  },
-})
-
-export const tagOpportunity = mutation({
-  args: {
-    opportunityId: v.id('opportunities'),
-    tags: v.array(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    // Require authentication to tag opportunities
-    // Note: In production, you may want to add admin role checks
-    await requireAuth(ctx)
-
-    const opportunity = await ctx.db.get(args.opportunityId)
-    if (!opportunity) {
-      throw new Error('Opportunity not found')
-    }
-
-    const existingTags = new Set(opportunity.tags)
-    args.tags.forEach((tag) => existingTags.add(tag))
-
-    await ctx.db.patch(args.opportunityId, {
-      tags: Array.from(existingTags),
-      lastUpdated: Date.now(),
-    })
-
-    return null
   },
 })
 
