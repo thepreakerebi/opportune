@@ -31,6 +31,65 @@ const matchingResultSchema = z.object({
 })
 
 /**
+ * Estimate token count for a string (rough approximation: ~4 chars per token)
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Estimate tokens for an opportunity summary
+ */
+function estimateOpportunityTokens(opp: {
+  title: string
+  provider: string
+  description: string
+  requirements: Array<string>
+  requiredDocuments: Array<string>
+  deadline: string
+  region?: string
+  awardAmount?: number
+}): number {
+  const desc = opp.description.substring(0, 500)
+  const reqs = opp.requirements.slice(0, 8).join(', ') // Truncate to first 8 requirements
+  const docs = opp.requiredDocuments.join(', ')
+  const summary = `- Title: ${opp.title}\n- Provider: ${opp.provider}\n- Description: ${desc}\n- Requirements: ${reqs}\n- Required Documents: ${docs}\n- Deadline: ${opp.deadline}\n- Region: ${opp.region ?? 'Not specified'}\n- Award Amount: ${opp.awardAmount ? `$${opp.awardAmount}` : 'Not specified'}`
+  return estimateTokens(summary)
+}
+
+/**
+ * Adaptive batch sizing based on token estimates
+ * Targets ~80K tokens per batch (safe for GPT-4o's 128K context)
+ * with buffer for system prompt, user profile, and output
+ */
+function calculateAdaptiveBatchSize(
+  opportunities: Array<{
+    title: string
+    provider: string
+    description: string
+    requirements: Array<string>
+    requiredDocuments: Array<string>
+    deadline: string
+    region?: string
+    awardAmount?: number
+  }>,
+  userProfileTokens: number,
+  systemPromptTokens: number = 500,
+  maxBatchTokens: number = 80000,
+): number {
+  const perOpportunityTokens = opportunities.map(estimateOpportunityTokens)
+  const averageTokens = perOpportunityTokens.reduce((a, b) => a + b, 0) / perOpportunityTokens.length
+
+  // Reserve tokens for: system prompt + user profile + output (~15K tokens)
+  const reservedTokens = systemPromptTokens + userProfileTokens + 15000
+  const availableTokens = maxBatchTokens - reservedTokens
+
+  // Calculate batch size, but ensure at least 10 and at most 60 opportunities
+  const calculatedSize = Math.floor(availableTokens / averageTokens)
+  return Math.max(10, Math.min(60, calculatedSize))
+}
+
+/**
  * Match opportunities for a single user using AI agent
  * Uses GPT-4o for sophisticated reasoning and context understanding
  */
@@ -71,36 +130,8 @@ export const matchOpportunitiesForUser = internalAction({
       throw new Error('User not found')
     }
 
-    const batchSize = args.batchSize ?? 20
-    const allMatches: Array<{
-      opportunityId: any
-      score: number
-      reasoning: string
-      eligibilityFactors: Array<string>
-      potentialConcerns?: Array<string>
-    }> = []
-
-    // Process opportunities in batches to avoid token limits
-    for (let i = 0; i < args.opportunityIds.length; i += batchSize) {
-      const batch = args.opportunityIds.slice(i, i + batchSize)
-
-      // Fetch opportunity details for this batch
-      const opportunities = await Promise.all(
-        batch.map(async (oppId) => {
-          return await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
-            opportunityId: oppId,
-          })
-        }),
-      )
-
-      const validOpportunities = opportunities.filter((opp) => opp !== null)
-
-      if (validOpportunities.length === 0) {
-        continue
-      }
-
-      // Build context for AI agent
-      const userProfileSummary = `
+    // Build user profile summary (reused for all batches)
+    const userProfileSummary = `
 Education Level: ${user.educationLevel ?? 'Not specified'}
 Subject: ${user.subject ?? 'Not specified'}
 Discipline: ${user.discipline ?? 'Not specified'}
@@ -110,29 +141,89 @@ Career Interests: ${user.careerInterests?.join(', ') || 'Not specified'}
 Demographic Tags: ${user.demographicTags?.join(', ') || 'None'}
 Academic Status: ${user.academicStatus?.gpa ? `GPA: ${user.academicStatus.gpa}` : 'Not specified'}
 `
+    const userProfileTokens = estimateTokens(userProfileSummary)
 
-      const opportunitiesSummary = validOpportunities
-        .map(
-          (opp, idx) => `
+    // Fetch all opportunities upfront for adaptive batch sizing
+    const allOpportunities = await Promise.all(
+      args.opportunityIds.map(async (oppId) => {
+        return await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
+          opportunityId: oppId,
+        })
+      }),
+    )
+
+    const validOpportunities = allOpportunities.filter((opp) => opp !== null)
+
+    if (validOpportunities.length === 0) {
+      return {
+        matches: [],
+        summary: 'No valid opportunities found for matching.',
+      }
+    }
+
+    // Calculate adaptive batch size based on opportunity complexity
+    const defaultBatchSize = args.batchSize ?? 45
+    const adaptiveBatchSize = args.batchSize
+      ? args.batchSize
+      : calculateAdaptiveBatchSize(validOpportunities as Array<{
+          title: string
+          provider: string
+          description: string
+          requirements: Array<string>
+          requiredDocuments: Array<string>
+          deadline: string
+          region?: string
+          awardAmount?: number
+        }>, userProfileTokens)
+
+    const batchSize = adaptiveBatchSize
+    const allMatches: Array<{
+      opportunityId: any
+      score: number
+      reasoning: string
+      eligibilityFactors: Array<string>
+      potentialConcerns?: Array<string>
+    }> = []
+
+    // Process opportunities in adaptive batches
+    for (let i = 0; i < validOpportunities.length; i += batchSize) {
+      const batch = validOpportunities.slice(i, i + batchSize)
+
+      // Retry logic for failed batches
+      let retries = 3
+      let batchMatches: Array<{
+        opportunityId: any
+        score: number
+        reasoning: string
+        eligibilityFactors: Array<string>
+        potentialConcerns?: Array<string>
+      }> = []
+
+      while (retries > 0) {
+        try {
+          // Build opportunities summary with truncated requirements
+          const opportunitiesSummary = batch
+            .map(
+              (opp, idx) => `
 Opportunity ${idx + 1}:
 - ID: ${opp!._id}
 - Title: ${opp!.title}
 - Provider: ${opp!.provider}
 - Description: ${opp!.description.substring(0, 500)}
-- Requirements: ${opp!.requirements.join(', ')}
+- Requirements: ${opp!.requirements.slice(0, 8).join(', ')}${opp!.requirements.length > 8 ? ' (and more...)' : ''}
 - Required Documents: ${opp!.requiredDocuments.join(', ')}
 - Deadline: ${opp!.deadline}
 - Region: ${opp!.region ?? 'Not specified'}
 - Award Amount: ${opp!.awardAmount ? `$${opp!.awardAmount}` : 'Not specified'}
 `,
-        )
-        .join('\n')
+            )
+            .join('\n')
 
-      // Use GPT-4o for advanced reasoning and structured output
-      const result = await generateObject({
-        model: openai('gpt-4o'),
-        schema: matchingResultSchema,
-        prompt: `You are an expert scholarship matching advisor. Analyze the following user profile and opportunities to determine the best matches.
+          // Use GPT-4o for advanced reasoning and structured output
+          const result = await generateObject({
+            model: openai('gpt-4o'),
+            schema: matchingResultSchema,
+            prompt: `You are an expert scholarship matching advisor. Analyze the following user profile and opportunities to determine the best matches.
 
 User Profile:
 ${userProfileSummary}
@@ -156,18 +247,131 @@ Your task:
 Only include opportunities with a score of 30 or higher. Focus on opportunities where the user has a realistic chance of success.
 
 Return structured results with scores, reasoning, and factors.`,
+          })
+
+          // Convert string IDs back to proper types
+          batchMatches = result.object.matches.map((match) => ({
+            opportunityId: match.opportunityId as any,
+            score: match.score,
+            reasoning: match.reasoning,
+            eligibilityFactors: match.eligibilityFactors,
+            potentialConcerns: match.potentialConcerns,
+          }))
+
+          // Success - break out of retry loop
+          break
+        } catch (error: any) {
+          retries--
+          const errorMessage = error.message || String(error)
+
+          // If token limit error or batch too large, reduce batch size and retry
+          if (
+            (errorMessage.includes('token') || errorMessage.includes('context') || errorMessage.includes('length')) &&
+            retries > 0 &&
+            batch.length > 5
+          ) {
+            console.warn(
+              `Batch size ${batch.length} too large, reducing to ${Math.floor(batch.length / 2)} and retrying...`,
+            )
+            // Split batch in half and process separately
+            const midPoint = Math.floor(batch.length / 2)
+            const firstHalf = batch.slice(0, midPoint)
+            const secondHalf = batch.slice(midPoint)
+
+            // Recursively process smaller batches
+            const firstHalfMatches = await processBatch(ctx, firstHalf, userProfileSummary, matchingResultSchema)
+            const secondHalfMatches = await processBatch(ctx, secondHalf, userProfileSummary, matchingResultSchema)
+
+            batchMatches = [...firstHalfMatches, ...secondHalfMatches]
+            break
+          }
+
+          // If this was the last retry, throw error
+          if (retries === 0) {
+            console.error(`Failed to process batch after 3 retries:`, errorMessage)
+            throw new Error(`Batch processing failed: ${errorMessage}`)
+          }
+
+          // Wait before retrying (exponential backoff)
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (4 - retries)))
+        }
+      }
+
+      allMatches.push(...batchMatches)
+    }
+
+    // Helper function to process a batch (for recursive retry)
+    async function processBatch(
+      context: any,
+      batchData: Array<any>,
+      profileSummary: string,
+      schema: any,
+    ): Promise<Array<{
+      opportunityId: any
+      score: number
+      reasoning: string
+      eligibilityFactors: Array<string>
+      potentialConcerns?: Array<string>
+    }>> {
+      const opportunitiesSummary = batchData
+        .map(
+          (opp, idx) => `
+Opportunity ${idx + 1}:
+- ID: ${opp!._id}
+- Title: ${opp!.title}
+- Provider: ${opp!.provider}
+- Description: ${opp!.description.substring(0, 500)}
+- Requirements: ${opp!.requirements.slice(0, 8).join(', ')}${opp!.requirements.length > 8 ? ' (and more...)' : ''}
+- Required Documents: ${opp!.requiredDocuments.join(', ')}
+- Deadline: ${opp!.deadline}
+- Region: ${opp!.region ?? 'Not specified'}
+- Award Amount: ${opp!.awardAmount ? `$${opp!.awardAmount}` : 'Not specified'}
+`,
+        )
+        .join('\n')
+
+      const result = await generateObject({
+        model: openai('gpt-4o'),
+        schema,
+        prompt: `You are an expert scholarship matching advisor. Analyze the following user profile and opportunities to determine the best matches.
+
+User Profile:
+${profileSummary}
+
+Available Opportunities:
+${opportunitiesSummary}
+
+Your task:
+1. Evaluate each opportunity against the user's profile
+2. Score each match from 0-100 based on:
+   - Education level compatibility
+   - Subject/discipline alignment
+   - Geographic eligibility (nationality/region)
+   - Interest alignment
+   - Academic qualifications match
+   - Overall fit and likelihood of success
+3. Provide clear reasoning for each match
+4. Identify specific eligibility factors
+5. Note any potential concerns or requirements that might be difficult to meet
+
+Only include opportunities with a score of 30 or higher. Focus on opportunities where the user has a realistic chance of success.
+
+Return structured results with scores, reasoning, and factors.`,
       })
 
-      // Convert string IDs back to proper types
-      const batchMatches = result.object.matches.map((match) => ({
+      return result.object.matches.map((match: {
+        opportunityId: string
+        score: number
+        reasoning: string
+        eligibilityFactors: Array<string>
+        potentialConcerns?: Array<string>
+      }) => ({
         opportunityId: match.opportunityId as any,
         score: match.score,
         reasoning: match.reasoning,
         eligibilityFactors: match.eligibilityFactors,
         potentialConcerns: match.potentialConcerns,
       }))
-
-      allMatches.push(...batchMatches)
     }
 
     // Combine with semantic and keyword matching for hybrid scoring
@@ -281,11 +485,11 @@ export const tagRecommendedOpportunities = internalAction({
       return null
     }
 
-    // Run AI-powered matching
+    // Run AI-powered matching (uses adaptive batch sizing)
     const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
       userId: args.userId,
       opportunityIds: allOpportunities.map((opp) => opp._id),
-      batchSize: 20,
+      // batchSize will be calculated adaptively based on opportunity complexity
     })
 
     // Tag matched opportunities
@@ -346,11 +550,11 @@ export const runDailyAIMatchingWorkflow = internalAction({
     // Process each user
     for (const user of users) {
       try {
-        // Run AI-powered matching
+        // Run AI-powered matching (uses adaptive batch sizing)
         const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
           userId: user._id,
           opportunityIds: allOpportunities.map((opp) => opp._id),
-          batchSize: 20, // Process 20 opportunities at a time
+          // batchSize will be calculated adaptively based on opportunity complexity
         })
 
         // Tag matched opportunities
