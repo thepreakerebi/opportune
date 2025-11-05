@@ -26,7 +26,8 @@ export const getUserDocuments = query({
         v.literal('application_package'),
         v.literal('other'),
       ),
-      content: v.optional(v.string()),
+      blocks: v.optional(v.any()), // BlockNote.js blocks
+      content: v.optional(v.string()), // Deprecated: plain text
       storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
@@ -68,7 +69,8 @@ export const getDocumentsByType = query({
         v.literal('application_package'),
         v.literal('other'),
       ),
-      content: v.optional(v.string()),
+      blocks: v.optional(v.any()), // BlockNote.js blocks
+      content: v.optional(v.string()), // Deprecated: plain text
       storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
@@ -104,7 +106,8 @@ export const getDocumentById = query({
         v.literal('application_package'),
         v.literal('other'),
       ),
-      content: v.optional(v.string()),
+      blocks: v.optional(v.any()), // BlockNote.js blocks
+      content: v.optional(v.string()), // Deprecated: plain text
       storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
@@ -165,7 +168,8 @@ export const createDocument = mutation({
       v.literal('application_package'),
       v.literal('other'),
     ),
-    content: v.optional(v.string()),
+    blocks: v.optional(v.any()), // BlockNote.js blocks array
+    content: v.optional(v.string()), // Deprecated: plain text (for backward compatibility)
     applicationId: v.optional(v.id('applications')),
     opportunityId: v.optional(v.id('opportunities')),
     tags: v.optional(v.array(v.string())),
@@ -181,6 +185,7 @@ export const createDocument = mutation({
       opportunityId: args.opportunityId,
       name: args.name,
       type: args.type,
+      blocks: args.blocks,
       content: args.content,
       tags: args.tags,
       createdAt: now,
@@ -196,7 +201,8 @@ export const updateDocument = mutation({
   args: {
     documentId: v.id('documents'),
     name: v.optional(v.string()),
-    content: v.optional(v.string()),
+    blocks: v.optional(v.any()), // BlockNote.js blocks array
+    content: v.optional(v.string()), // Deprecated: plain text (for backward compatibility)
     tags: v.optional(v.array(v.string())),
   },
   returns: v.null(),
@@ -211,12 +217,22 @@ export const updateDocument = mutation({
     // Verify ownership
     await requireOwnership(ctx, document.userId, 'Document')
 
-    await ctx.db.patch(args.documentId, {
-      name: args.name,
-      content: args.content,
-      tags: args.tags,
+    const updateData: {
+      name?: string
+      blocks?: any
+      content?: string
+      tags?: Array<string>
+      updatedAt: number
+    } = {
       updatedAt: Date.now(),
-    })
+    }
+
+    if (args.name !== undefined) updateData.name = args.name
+    if (args.blocks !== undefined) updateData.blocks = args.blocks
+    if (args.content !== undefined) updateData.content = args.content
+    if (args.tags !== undefined) updateData.tags = args.tags
+
+    await ctx.db.patch(args.documentId, updateData)
 
     return null
   },
@@ -274,7 +290,8 @@ export const getDocumentsByApplication = query({
         v.literal('application_package'),
         v.literal('other'),
       ),
-      content: v.optional(v.string()),
+      blocks: v.optional(v.any()), // BlockNote.js blocks
+      content: v.optional(v.string()), // Deprecated: plain text
       storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
@@ -320,7 +337,8 @@ export const getDocumentByIdInternal = internalQuery({
         v.literal('application_package'),
         v.literal('other'),
       ),
-      content: v.optional(v.string()),
+      blocks: v.optional(v.any()), // BlockNote.js blocks
+      content: v.optional(v.string()), // Deprecated: plain text
       storageId: v.optional(v.id('_storage')),
       embedding: v.optional(v.array(v.number())),
       embeddingText: v.optional(v.string()),

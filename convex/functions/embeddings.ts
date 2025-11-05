@@ -170,6 +170,83 @@ export const generateUserProfileEmbedding = internalAction({
 })
 
 /**
+ * Extract plain text from BlockNote.js blocks
+ * Recursively traverses blocks and their children to extract all text content
+ */
+function extractTextFromBlocks(blocks: any): string {
+  if (!blocks || !Array.isArray(blocks)) {
+    return ''
+  }
+
+  const textParts: Array<string> = []
+
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') {
+      continue
+    }
+
+    // Extract text from block content
+    if (block.content) {
+      if (Array.isArray(block.content)) {
+        // InlineContent array (styled text, links, etc.)
+        for (const item of block.content) {
+          if (item && typeof item === 'object') {
+            if (item.type === 'text' && item.text) {
+              textParts.push(item.text)
+            } else if (item.type === 'link' && item.content) {
+              // Extract text from link content
+              if (Array.isArray(item.content)) {
+                for (const linkItem of item.content) {
+                  if (linkItem && linkItem.type === 'text' && linkItem.text) {
+                    textParts.push(linkItem.text)
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else if (typeof block.content === 'string') {
+        // Plain string content
+        textParts.push(block.content)
+      } else if (block.content && typeof block.content === 'object') {
+        // TableContent or other structured content
+        if (block.content.type === 'tableContent' && block.content.rows) {
+          for (const row of block.content.rows) {
+            if (row.cells && Array.isArray(row.cells)) {
+              for (const cell of row.cells) {
+                if (Array.isArray(cell)) {
+                  for (const cellItem of cell) {
+                    if (cellItem && cellItem.type === 'text' && cellItem.text) {
+                      textParts.push(cellItem.text)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Recursively extract text from children blocks
+    if (block.children && Array.isArray(block.children)) {
+      const childText = extractTextFromBlocks(block.children)
+      if (childText) {
+        textParts.push(childText)
+      }
+    }
+
+    // Add block type as context for headings and special blocks
+    if (block.type === 'heading') {
+      // Headings are important, so we add them with emphasis
+      // The text is already extracted above, but we could add level info
+    }
+  }
+
+  return textParts.join(' ').trim()
+}
+
+/**
  * Generate embedding for document name/type
  */
 export const generateDocumentEmbedding = internalAction({
@@ -187,12 +264,35 @@ export const generateDocumentEmbedding = internalAction({
       throw new Error('Document not found')
     }
 
-    // Combine document name and type for embedding
-    const embeddingText = `${document.type} ${document.name} ${document.tags?.join(' ') ?? ''}`.trim()
+    // Extract text from BlockNote blocks if available
+    let documentText = ''
+    if (document.blocks && Array.isArray(document.blocks)) {
+      documentText = extractTextFromBlocks(document.blocks)
+    } else if (document.content) {
+      // Fallback to deprecated content field
+      documentText = document.content
+    }
+
+    // Combine document metadata with extracted text for embedding
+    const embeddingParts: Array<string> = [
+      document.type,
+      document.name,
+      documentText,
+      document.tags?.join(' ') ?? '',
+    ].filter(Boolean)
+
+    const embeddingText = embeddingParts.join(' ').trim()
+
+    if (!embeddingText) {
+      throw new Error('Document has no content to embed')
+    }
+
+    // Limit to 8000 characters to avoid token limits
+    const limitedText = embeddingText.substring(0, 8000)
 
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
-      input: embeddingText,
+      input: limitedText,
     })
 
     if (response.data.length === 0) {
@@ -200,7 +300,7 @@ export const generateDocumentEmbedding = internalAction({
     }
     const embedding = response.data[0].embedding
 
-    // Store embedding and text
+    // Store embedding and text (store full text, not truncated)
     await ctx.runMutation((internal.functions as any).embeddings.mutations.storeDocumentEmbedding, {
       documentId: args.documentId,
       embedding,

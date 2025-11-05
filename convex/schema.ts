@@ -215,7 +215,12 @@ export default defineSchema({
       v.literal('application_package'),
       v.literal('other'),
     ),
-    content: v.optional(v.string()), // Text content from BlockNote.js editor
+    // BlockNote.js block structure (array of blocks)
+    // Each block has: id, type, props, content, children
+    blocks: v.optional(v.any()), // Array of BlockNote blocks
+    // Deprecated: Plain text content (kept for backward compatibility)
+    // Use blocks field instead for BlockNote.js documents
+    content: v.optional(v.string()),
     storageId: v.optional(v.id('_storage')), // Optional: if document is stored as file
     // Embeddings for matching to essay prompts/requirements
     embedding: v.optional(v.array(v.number())),
