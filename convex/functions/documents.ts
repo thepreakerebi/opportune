@@ -4,8 +4,9 @@ import { internal } from '../_generated/api'
 import { requireAuth, requireOwnership } from './authHelpers'
 
 /**
- * Platform-generated documents (AI-generated essays, assembled documents, etc.)
- * These are created by the system, not uploaded by users
+ * User-created documents (essays, cover letters, statements, etc.)
+ * Created by users using BlockNote.js with AI integration
+ * Users have full control over content creation and editing
  * User-uploaded files are in the userFiles table
  */
 
@@ -151,7 +152,8 @@ export const getDocumentUrl = query({
 })
 
 /**
- * Create a platform-generated document (e.g., AI-generated essay)
+ * Create a user-created document (e.g., essay created via BlockNote.js)
+ * Users create documents themselves using BlockNote.js editor with AI assistance
  */
 export const createDocument = mutation({
   args: {
@@ -188,7 +190,7 @@ export const createDocument = mutation({
 })
 
 /**
- * Update platform-generated document
+ * Update user-created document
  */
 export const updateDocument = mutation({
   args: {
@@ -221,7 +223,7 @@ export const updateDocument = mutation({
 })
 
 /**
- * Delete platform-generated document
+ * Delete user-created document
  */
 export const deleteDocument = mutation({
   args: {

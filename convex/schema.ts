@@ -184,6 +184,8 @@ export default defineSchema({
     storageId: v.id('_storage'), // Reference to Convex storage
     contentType: v.string(), // MIME type (e.g., 'application/pdf', 'image/jpeg')
     size: v.number(), // File size in bytes
+    // Extracted text content from PDF files (for semantic matching)
+    extractedText: v.optional(v.string()),
     // Embeddings for semantic matching to opportunity requirements
     embedding: v.optional(v.array(v.number())),
     embeddingText: v.optional(v.string()),
@@ -198,8 +200,9 @@ export default defineSchema({
       dimensions: 1536,
     }),
 
-  // Platform-generated documents (AI-generated essays, assembled documents, etc.)
-  // These are created by the system, not uploaded by users
+  // User-created documents (essays, cover letters, statements, etc.)
+  // Created by users using BlockNote.js with AI integration
+  // Users have full control over content creation and editing
   documents: defineTable({
     userId: v.id('users'),
     applicationId: v.optional(v.id('applications')), // Link to specific application if applicable
@@ -212,7 +215,7 @@ export default defineSchema({
       v.literal('application_package'),
       v.literal('other'),
     ),
-    content: v.optional(v.string()), // Text content for platform-generated documents
+    content: v.optional(v.string()), // Text content from BlockNote.js editor
     storageId: v.optional(v.id('_storage')), // Optional: if document is stored as file
     // Embeddings for matching to essay prompts/requirements
     embedding: v.optional(v.array(v.number())),

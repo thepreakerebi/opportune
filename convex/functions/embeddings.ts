@@ -213,7 +213,8 @@ export const generateDocumentEmbedding = internalAction({
 
 /**
  * Generate embedding for user file
- * Extracts text from PDF or generates description from file metadata
+ * Extracts text from PDF files using pdf-parse library
+ * For images, uses metadata (filename, fileType, tags) for embedding
  */
 export const generateUserFileEmbedding = internalAction({
   args: {
@@ -230,10 +231,50 @@ export const generateUserFileEmbedding = internalAction({
       throw new Error('File not found')
     }
 
-    // For PDFs, we would extract text here (requires PDF parsing library)
-    // For images, we would use OCR or generate description based on metadata
-    // For now, use filename, fileType, and tags to create embedding text
-    const embeddingText = `${file.fileType} ${file.fileName} ${file.tags?.join(' ') ?? ''}`.trim()
+    let embeddingText = `${file.fileType} ${file.fileName} ${file.tags?.join(' ') ?? ''}`.trim()
+
+    // Extract text from PDF files
+    if (file.contentType === 'application/pdf') {
+      try {
+        // Get file blob from Convex storage
+        const fileBlob = await ctx.storage.get(file.storageId)
+        if (!fileBlob) {
+          throw new Error('File not found in storage')
+        }
+
+        // Convert Blob to Buffer for pdf-parse
+        const arrayBuffer = await fileBlob.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        // Extract text using pdf-parse (CommonJS module)
+        // pdf-parse exports the function itself (not as default)
+        // When imported as ES module, it may be wrapped differently
+        const pdfParseModule = await import('pdf-parse')
+        // pdf-parse is the function itself when imported
+        const pdfParse = (pdfParseModule as any).default || pdfParseModule
+        const pdfData = await pdfParse(buffer)
+
+        // Use extracted text for embedding (limit to 8000 chars to avoid token limits)
+        const extractedText = pdfData.text.trim().substring(0, 8000)
+        
+        if (extractedText.length > 0) {
+          // Combine metadata with extracted text for better embeddings
+          embeddingText = `${file.fileType} ${file.fileName}\n\n${extractedText}${file.tags?.length ? `\n\nTags: ${file.tags.join(', ')}` : ''}`.trim()
+          
+          // Store extracted text in database for future use
+          await ctx.runMutation((internal.functions as any).userFiles.storeExtractedText, {
+            fileId: args.fileId,
+            extractedText: pdfData.text.trim(), // Store full text, not truncated
+          })
+        }
+      } catch (error) {
+        console.error(`Failed to extract text from PDF ${args.fileId}:`, error)
+        // Fall back to metadata-based embedding if extraction fails
+      }
+    }
+
+    // For images, we use metadata only (OCR would require additional libraries)
+    // The embedding text already includes filename, fileType, and tags
 
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',

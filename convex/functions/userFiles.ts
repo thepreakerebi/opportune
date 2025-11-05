@@ -152,6 +152,23 @@ export const createUserFile = internalMutation({
 })
 
 /**
+ * Store extracted text from PDF file
+ */
+export const storeExtractedText = internalMutation({
+  args: {
+    fileId: v.id('userFiles'),
+    extractedText: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.fileId, {
+      extractedText: args.extractedText,
+    })
+    return null
+  },
+})
+
+/**
  * Get all user files
  */
 export const getUserFiles = query({
@@ -337,6 +354,7 @@ export const getUserFilesInternal = internalQuery({
       storageId: v.id('_storage'),
       contentType: v.string(),
       size: v.number(),
+      extractedText: v.optional(v.string()),
       embedding: v.optional(v.array(v.number())),
       embeddingText: v.optional(v.string()),
       tags: v.optional(v.array(v.string())),
@@ -375,6 +393,7 @@ export const getUserFileByIdInternal = internalQuery({
       storageId: v.id('_storage'),
       contentType: v.string(),
       size: v.number(),
+      extractedText: v.optional(v.string()),
       embedding: v.optional(v.array(v.number())),
       embeddingText: v.optional(v.string()),
       tags: v.optional(v.array(v.string())),
