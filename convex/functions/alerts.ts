@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 import { internalMutation, mutation, query } from '../_generated/server'
+import { internal } from '../_generated/api'
 import { requireAuth, requireOwnership } from './authHelpers'
 
 export const getUserAlerts = query({
@@ -233,7 +234,7 @@ export const generateDeadlineAlerts = internalMutation({
             urgencyMessage = '📅 Deadline approaching - don\'t forget!'
           }
 
-          await ctx.db.insert('alerts', {
+          const alertId = await ctx.db.insert('alerts', {
             userId: application.userId,
             applicationId: application._id,
             opportunityId: application.opportunityId,
@@ -243,6 +244,16 @@ export const generateDeadlineAlerts = internalMutation({
             dueDate: deadlineDate,
             completed: false,
             createdAt: Date.now(),
+          })
+
+          // Send email notification
+          await ctx.scheduler.runAfter(0, internal.functions.emails.sendAlertEmail, {
+            userId: application.userId,
+            alertId,
+            alertTitle: `${urgencyMessage} ${opportunity.title}`,
+            alertMessage: `The deadline for ${opportunity.title} is in ${daysUntilDeadline} day(s). Make sure your application is complete and submitted.`,
+            alertType: 'deadline',
+            opportunityTitle: opportunity.title,
           })
         }
       }
@@ -327,7 +338,7 @@ export const generateMissingDocAlerts = internalMutation({
             })
           } else {
             // Create new alert
-            await ctx.db.insert('alerts', {
+            const alertId = await ctx.db.insert('alerts', {
               userId: application.userId,
               applicationId: application._id,
               opportunityId: application.opportunityId,
@@ -337,6 +348,16 @@ export const generateMissingDocAlerts = internalMutation({
               dueDate: Date.now() + 24 * 60 * 60 * 1000,
               completed: false,
               createdAt: Date.now(),
+            })
+
+            // Send email notification
+            await ctx.scheduler.runAfter(0, internal.functions.emails.sendAlertEmail, {
+              userId: application.userId,
+              alertId,
+              alertTitle: `📄 Missing ${trulyMissingItems.length} document(s): ${opportunityTitle}`,
+              alertMessage: `Your application for ${opportunityTitle} is missing ${trulyMissingItems.length} required document(s). Missing items: ${trulyMissingItems.map((i) => i.item).join(', ')}`,
+              alertType: 'missing_doc',
+              opportunityTitle,
             })
           }
         }
@@ -367,7 +388,7 @@ export const createApplicationAlert = internalMutation({
     }
 
     // Create welcome alert for new application
-    await ctx.db.insert('alerts', {
+    const alertId = await ctx.db.insert('alerts', {
       userId: application.userId,
       applicationId: application._id,
       opportunityId: application.opportunityId,
@@ -377,6 +398,16 @@ export const createApplicationAlert = internalMutation({
       dueDate: Date.now() + 24 * 60 * 60 * 1000, // 24 hours from now
       completed: false,
       createdAt: Date.now(),
+    })
+
+    // Send email notification
+    await ctx.scheduler.runAfter(0, internal.functions.emails.sendAlertEmail, {
+      userId: application.userId,
+      alertId,
+      alertTitle: `🎯 New Application Started: ${opportunity.title}`,
+      alertMessage: `You've started an application for ${opportunity.title}. Complete your checklist to submit on time!`,
+      alertType: 'nudge',
+      opportunityTitle: opportunity.title,
     })
 
     return null
@@ -459,7 +490,7 @@ export const createStatusChangeAlert = internalMutation({
         return null
     }
 
-    await ctx.db.insert('alerts', {
+    const alertId = await ctx.db.insert('alerts', {
       userId: application.userId,
       applicationId: application._id,
       opportunityId: application.opportunityId,
@@ -470,6 +501,18 @@ export const createStatusChangeAlert = internalMutation({
       completed: false,
       createdAt: Date.now(),
     })
+
+    // Send email notification for status changes (only for submitted status)
+    if (args.newStatus === 'submitted') {
+      await ctx.scheduler.runAfter(0, internal.functions.emails.sendAlertEmail, {
+        userId: application.userId,
+        alertId,
+        alertTitle: title,
+        alertMessage: message,
+        alertType: 'reminder',
+        opportunityTitle: opportunity.title,
+      })
+    }
 
     return null
   },
@@ -554,7 +597,7 @@ export const generateAutoNudges = internalMutation({
           .first()
 
         if (!existingNudge) {
-          await ctx.db.insert('alerts', {
+          const alertId = await ctx.db.insert('alerts', {
             userId: application.userId,
             applicationId: application._id,
             opportunityId: application.opportunityId,
@@ -564,6 +607,16 @@ export const generateAutoNudges = internalMutation({
             dueDate: urgency ? deadlineDate : Date.now() + 24 * 60 * 60 * 1000,
             completed: false,
             createdAt: Date.now(),
+          })
+
+          // Send email notification
+          await ctx.scheduler.runAfter(0, internal.functions.emails.sendAlertEmail, {
+            userId: application.userId,
+            alertId,
+            alertTitle: title,
+            alertMessage: message,
+            alertType: 'nudge',
+            opportunityTitle: opportunity.title,
           })
         } else {
           // Update existing nudge with fresh message
