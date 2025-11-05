@@ -33,7 +33,6 @@ import type * as functions_userFiles from "../functions/userFiles.js";
 import type * as functions_users from "../functions/users.js";
 import type * as functions_validation from "../functions/validation.js";
 import type * as http from "../http.js";
-import type * as myFunctions from "../myFunctions.js";
 
 import type {
   ApiFromModules,
@@ -75,7 +74,6 @@ declare const fullApi: ApiFromModules<{
   "functions/users": typeof functions_users;
   "functions/validation": typeof functions_validation;
   http: typeof http;
-  myFunctions: typeof myFunctions;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
