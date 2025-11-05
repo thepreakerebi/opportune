@@ -17,6 +17,7 @@ import type * as functions_applicationWorkflow from "../functions/applicationWor
 import type * as functions_applications from "../functions/applications.js";
 import type * as functions_authHelpers from "../functions/authHelpers.js";
 import type * as functions_calendar from "../functions/calendar.js";
+import type * as functions_chats from "../functions/chats.js";
 import type * as functions_documents from "../functions/documents.js";
 import type * as functions_educationHelpers from "../functions/educationHelpers.js";
 import type * as functions_emails from "../functions/emails.js";
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   "functions/applications": typeof functions_applications;
   "functions/authHelpers": typeof functions_authHelpers;
   "functions/calendar": typeof functions_calendar;
+  "functions/chats": typeof functions_chats;
   "functions/documents": typeof functions_documents;
   "functions/educationHelpers": typeof functions_educationHelpers;
   "functions/emails": typeof functions_emails;

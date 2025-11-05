@@ -10,32 +10,59 @@ import { createTools } from './tools'
 
 export const chatAgent = action({
   args: {
+    chatId: v.optional(v.id('chats')), // If provided, use existing chat; otherwise create new
     question: v.string(),
-    conversationHistory: v.optional(
-      v.array(
-        v.object({
-          role: v.union(v.literal('user'), v.literal('assistant')),
-          content: v.string(),
-        }),
-      ),
-    ),
   },
-  returns: v.any(), // Stream response (Response object)
-  handler: async (ctx, args): Promise<any> => {
+  returns: v.object({
+    chatId: v.id('chats'),
+    stream: v.any(), // Stream response (Response object)
+  }),
+  handler: async (ctx, args): Promise<{ chatId: any; stream: any }> => {
     // Get authenticated user via query
     const user = await ctx.runQuery(api.functions.users.getCurrentUser, {})
     if (!user) {
       throw new Error('Not authenticated')
     }
 
+    // Get or create chat
+    let chatId: any
+    let isNewChat = false
+
+    if (args.chatId) {
+      // Use existing chat
+      const chat = await ctx.runQuery(internal.functions.chats.getChatByIdInternal, {
+        chatId: args.chatId,
+      })
+      if (!chat || chat.userId !== user._id) {
+        throw new Error('Chat not found or unauthorized')
+      }
+      chatId = args.chatId
+    } else {
+      // Create new chat
+      chatId = await ctx.runMutation(api.functions.chats.createChat, {})
+      chatId = chatId.chatId
+      isNewChat = true
+    }
+
+    // Get existing messages from chat
+    const existingMessages = await ctx.runQuery(internal.functions.chats.getChatMessagesInternal, {
+      chatId,
+    })
+
+    // Save user message
+    await ctx.runMutation(internal.functions.chats.saveChatMessage, {
+      chatId,
+      role: 'user',
+      content: args.question,
+    })
+
     // Create tools with context
     const tools: any = createTools(ctx)
 
     // Build conversation history
-    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      {
-        role: 'assistant',
-        content: `You are Opportune, an AI assistant specialized in helping students discover, track, and apply for scholarships, grants, awards, and fellowships.
+    const systemMessage = {
+      role: 'assistant' as const,
+      content: `You are Opportune, an AI assistant specialized in helping students discover, track, and apply for scholarships, grants, awards, and fellowships.
 
 Your role:
 - Answer questions about opportunities (scholarships, grants, etc.)
@@ -52,8 +79,14 @@ You have access to:
 - Application checklists and requirements
 
 Be helpful, friendly, and provide specific, actionable information. When discussing opportunities, mention key details like deadlines, award amounts, and requirements. When discussing applications, reference their current status and next steps.`,
-      },
-      ...(args.conversationHistory ?? []),
+    }
+
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      systemMessage,
+      ...existingMessages.map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
       {
         role: 'user',
         content: args.question,
@@ -65,9 +98,35 @@ Be helpful, friendly, and provide specific, actionable information. When discuss
       model: openai('gpt-4o'),
       tools,
       messages,
+      onFinish: async ({ text }) => {
+        // Save assistant response
+        await ctx.runMutation(internal.functions.chats.saveChatMessage, {
+          chatId,
+          role: 'assistant',
+          content: text,
+        })
+
+        // If this is a new chat with first message, generate name
+        if (isNewChat && existingMessages.length === 0) {
+          await ctx.scheduler.runAfter(0, (internal.functions as any).chatsActions.generateChatName, {
+            chatId,
+            firstMessage: args.question,
+            firstResponse: text,
+          })
+        }
+
+        // Generate embeddings for the messages (async, non-blocking)
+        await ctx.scheduler.runAfter(0, (internal.functions as any).chatsActions.generateChatEmbeddings, {
+          chatId,
+          firstMessage: args.question,
+        })
+      },
     })
 
-    return result.toTextStreamResponse()
+    return {
+      chatId,
+      stream: result.toTextStreamResponse(),
+    }
   },
 })
 

@@ -243,6 +243,40 @@ export default defineSchema({
       dimensions: 1536,
     }),
 
+  // Chat conversations between users and the AI agent
+  chats: defineTable({
+    userId: v.id('users'),
+    name: v.string(), // Auto-generated or user-edited chat name
+    // Embedding of the first message for semantic search
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()), // First user message for embedding
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_userId_and_updatedAt', ['userId', 'updatedAt'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 1536,
+    }),
+
+  // Messages within a chat conversation
+  chatMessages: defineTable({
+    chatId: v.id('chats'),
+    role: v.union(v.literal('user'), v.literal('assistant'), v.literal('system')),
+    content: v.string(),
+    // Embedding for semantic search within chat history
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_chatId', ['chatId'])
+    .index('by_chatId_and_createdAt', ['chatId', 'createdAt'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 1536,
+    }),
+
   numbers: defineTable({
     value: v.number(),
   }),
