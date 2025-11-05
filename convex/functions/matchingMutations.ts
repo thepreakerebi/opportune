@@ -135,8 +135,102 @@ export const matchOpportunitiesToUserKeyword = internalMutation({
 })
 
 /**
+ * Save user-opportunity matches to the mapping table
+ * This replaces the old tag-based system with user-specific matching
+ */
+export const saveUserOpportunityMatches = internalMutation({
+  args: {
+    userId: v.id('users'),
+    matches: v.array(
+      v.object({
+        opportunityId: v.id('opportunities'),
+        score: v.number(),
+        reasoning: v.optional(v.string()),
+        eligibilityFactors: v.optional(v.array(v.string())),
+      }),
+    ),
+    matchType: v.union(
+      v.literal('daily_automated'),
+      v.literal('user_search'),
+      v.literal('manual'),
+    ),
+    minScore: v.optional(v.number()),
+  },
+  returns: v.object({
+    saved: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const minScore = args.minScore ?? 30
+    const now = Date.now()
+    let saved = 0
+
+    // First, remove old matches of this type for this user (to refresh recommendations)
+    // This ensures we don't have stale matches
+    const existingMatches = await ctx.db
+      .query('userOpportunityMatches')
+      .withIndex('by_userId_and_matchType', (q) =>
+        q.eq('userId', args.userId).eq('matchType', args.matchType),
+      )
+      .collect()
+
+    for (const existing of existingMatches) {
+      await ctx.db.delete(existing._id)
+    }
+
+    // Save new matches
+    for (const match of args.matches) {
+      if (match.score >= minScore) {
+        // Check if this match already exists (for different matchType)
+        const existing = await ctx.db
+          .query('userOpportunityMatches')
+          .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+          .filter((q) => q.eq(q.field('opportunityId'), match.opportunityId))
+          .first()
+
+        if (existing) {
+          // Update existing match if new score is higher or matchType is more specific
+          // user_search > daily_automated > manual (priority order)
+          const shouldUpdate =
+            match.score > existing.matchScore ||
+            (args.matchType === 'user_search' &&
+              existing.matchType !== 'user_search') ||
+            (args.matchType === 'daily_automated' &&
+              existing.matchType === 'manual')
+
+          if (shouldUpdate) {
+            await ctx.db.patch(existing._id, {
+              matchScore: match.score,
+              matchType: args.matchType,
+              matchedAt: now,
+              reasoning: match.reasoning,
+              eligibilityFactors: match.eligibilityFactors,
+            })
+            saved++
+          }
+        } else {
+          // Create new match record
+          await ctx.db.insert('userOpportunityMatches', {
+            userId: args.userId,
+            opportunityId: match.opportunityId,
+            matchScore: match.score,
+            matchType: args.matchType,
+            matchedAt: now,
+            reasoning: match.reasoning,
+            eligibilityFactors: match.eligibilityFactors,
+          })
+          saved++
+        }
+      }
+    }
+
+    return { saved }
+  },
+})
+
+/**
  * Tag opportunities with "For You" based on AI matching results
- * This is a mutation (not an action) so it must be in a non-Node.js file
+ * DEPRECATED: Use saveUserOpportunityMatches instead
+ * Kept for backward compatibility during migration
  */
 export const tagOpportunitiesFromMatches = internalMutation({
   args: {

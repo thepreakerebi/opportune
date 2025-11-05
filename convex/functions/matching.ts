@@ -155,7 +155,7 @@ Academic Status: ${user.academicStatus?.gpa ? `GPA: ${user.academicStatus.gpa}` 
       }),
     )
 
-    const validOpportunities = allOpportunities.filter((opp) => opp !== null)
+    const validOpportunities = allOpportunities.filter((opp): opp is NonNullable<typeof opp> => opp !== null)
 
     if (validOpportunities.length === 0) {
       return {
@@ -209,15 +209,15 @@ Academic Status: ${user.academicStatus?.gpa ? `GPA: ${user.academicStatus.gpa}` 
             .map(
               (opp, idx) => `
 Opportunity ${idx + 1}:
-- ID: ${opp!._id}
-- Title: ${opp!.title}
-- Provider: ${opp!.provider}
-- Description: ${opp!.description.substring(0, 500)}
-- Requirements: ${opp!.requirements.slice(0, 8).join(', ')}${opp!.requirements.length > 8 ? ' (and more...)' : ''}
-- Required Documents: ${opp!.requiredDocuments.join(', ')}
-- Deadline: ${opp!.deadline}
-- Region: ${opp!.region ?? 'Not specified'}
-- Award Amount: ${opp!.awardAmount ? `$${opp!.awardAmount}` : 'Not specified'}
+- ID: ${opp._id}
+- Title: ${opp.title}
+- Provider: ${opp.provider}
+- Description: ${opp.description.substring(0, 500)}
+- Requirements: ${opp.requirements.slice(0, 8).join(', ')}${opp.requirements.length > 8 ? ' (and more...)' : ''}
+- Required Documents: ${opp.requiredDocuments.join(', ')}
+- Deadline: ${opp.deadline}
+- Region: ${opp.region ?? 'Not specified'}
+- Award Amount: ${opp.awardAmount ? `$${opp.awardAmount}` : 'Not specified'}
 `,
             )
             .join('\n')
@@ -322,15 +322,15 @@ Return structured results with scores, reasoning, and factors.`,
         .map(
           (opp, idx) => `
 Opportunity ${idx + 1}:
-- ID: ${opp!._id}
-- Title: ${opp!.title}
-- Provider: ${opp!.provider}
-- Description: ${opp!.description.substring(0, 500)}
-- Requirements: ${opp!.requirements.slice(0, 8).join(', ')}${opp!.requirements.length > 8 ? ' (and more...)' : ''}
-- Required Documents: ${opp!.requiredDocuments.join(', ')}
-- Deadline: ${opp!.deadline}
-- Region: ${opp!.region ?? 'Not specified'}
-- Award Amount: ${opp!.awardAmount ? `$${opp!.awardAmount}` : 'Not specified'}
+- ID: ${opp._id}
+- Title: ${opp.title}
+- Provider: ${opp.provider}
+- Description: ${opp.description.substring(0, 500)}
+- Requirements: ${opp.requirements.slice(0, 8).join(', ')}${opp.requirements.length > 8 ? ' (and more...)' : ''}
+- Required Documents: ${opp.requiredDocuments.join(', ')}
+- Deadline: ${opp.deadline}
+- Region: ${opp.region ?? 'Not specified'}
+- Award Amount: ${opp.awardAmount ? `$${opp.awardAmount}` : 'Not specified'}
 `,
         )
         .join('\n')
@@ -564,17 +564,20 @@ export const runDailyAIMatchingWorkflow = internalAction({
           // batchSize will be calculated adaptively based on opportunity complexity
         })
 
-        // Tag matched opportunities
-        const taggingResult = await ctx.runMutation((internal.functions as any).matchingMutations.tagOpportunitiesFromMatches, {
+        // Save matched opportunities to user-specific mapping table
+        const saveResult = await ctx.runMutation((internal.functions as any).matchingMutations.saveUserOpportunityMatches, {
           userId: user._id,
           matches: matchingResult.matches.map((m) => ({
             opportunityId: m.opportunityId,
             score: m.score,
+            reasoning: m.reasoning,
+            eligibilityFactors: m.eligibilityFactors,
           })),
-          tagThreshold: 30,
+          matchType: 'daily_automated',
+          minScore: 30,
         })
 
-        totalOpportunitiesMatched += taggingResult.tagged
+        totalOpportunitiesMatched += saveResult.saved
         usersProcessed++
       } catch (error: any) {
         const errorMsg = `Error matching opportunities for user ${user._id}: ${error.message}`

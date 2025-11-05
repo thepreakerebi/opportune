@@ -163,6 +163,8 @@ export const getRecommendedOpportunities = query({
         ),
         lastUpdated: v.number(),
         createdAt: v.number(),
+        matchScore: v.number(),
+        matchReasoning: v.optional(v.string()),
       }),
     ),
     isDone: v.boolean(),
@@ -170,14 +172,64 @@ export const getRecommendedOpportunities = query({
   }),
   handler: async (ctx, args) => {
     // Require authentication for personalized recommendations
-    await requireAuth(ctx)
+    const user = await requireAuth(ctx)
 
-    return await ctx.db
-      .query('opportunities')
-      .withIndex('by_deadline')
-      .filter((q: any) => q.field('tags').includes('For You'))
-      .order('asc')
-      .paginate(args.paginationOpts)
+    // Get user-specific matches from mapping table
+    const userMatches = await ctx.db
+      .query('userOpportunityMatches')
+      .withIndex('by_userId', (q) => q.eq('userId', user._id))
+      .order('desc')
+      .collect()
+
+    if (userMatches.length === 0) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: null,
+      }
+    }
+
+    // Sort by match score (descending) and get opportunity IDs
+    const sortedMatches = userMatches.sort((a, b) => b.matchScore - a.matchScore)
+
+    // Create a map of opportunity IDs to match metadata for quick lookup
+    const matchMetadata = new Map<string, { score: number; reasoning?: string }>()
+    for (const match of sortedMatches) {
+      matchMetadata.set(match.opportunityId, {
+        score: match.matchScore,
+        reasoning: match.reasoning,
+      })
+    }
+
+    // Get opportunity IDs for pagination
+    const opportunityIds = sortedMatches.map((m) => m.opportunityId)
+
+    // Paginate opportunity IDs
+    const startIndex = args.paginationOpts.cursor
+      ? parseInt(args.paginationOpts.cursor, 10)
+      : 0
+    const endIndex = startIndex + args.paginationOpts.numItems
+    const pageIds = opportunityIds.slice(startIndex, endIndex)
+
+    // Fetch full opportunity details
+    const opportunities = []
+    for (const id of pageIds) {
+      const opp = await ctx.db.get(id)
+      if (opp) {
+        const metadata = matchMetadata.get(id)
+        opportunities.push({
+          ...opp,
+          matchScore: metadata?.score ?? 0,
+          matchReasoning: metadata?.reasoning,
+        })
+      }
+    }
+
+    return {
+      page: opportunities,
+      isDone: endIndex >= opportunityIds.length,
+      continueCursor: endIndex < opportunityIds.length ? String(endIndex) : null,
+    }
   },
 })
 

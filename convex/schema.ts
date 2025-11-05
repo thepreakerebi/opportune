@@ -176,6 +176,25 @@ export default defineSchema({
     .index('by_scheduledFor', ['scheduledFor'])
     .index('by_type', ['type']),
 
+  userOpportunityMatches: defineTable({
+    userId: v.id('users'),
+    opportunityId: v.id('opportunities'),
+    matchScore: v.number(),
+    matchType: v.union(
+      v.literal('daily_automated'), // From daily matching workflow
+      v.literal('user_search'), // From user-initiated search
+      v.literal('manual'), // Manually tagged/recommended
+    ),
+    matchedAt: v.number(),
+    // Metadata for analytics
+    reasoning: v.optional(v.string()),
+    eligibilityFactors: v.optional(v.array(v.string())),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_opportunityId', ['opportunityId'])
+    .index('by_userId_and_matchType', ['userId', 'matchType'])
+    .index('by_userId_and_matchScore', ['userId', 'matchScore']),
+
   numbers: defineTable({
     value: v.number(),
   }),
