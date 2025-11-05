@@ -10,6 +10,36 @@ const openai = new OpenAI({
 })
 
 /**
+ * Calculate cosine similarity between two vectors
+ */
+function cosineSimilarity(vecA: Array<number>, vecB: Array<number>): number {
+  if (vecA.length !== vecB.length) {
+    throw new Error('Vectors must have the same length')
+  }
+
+  let dotProduct = 0
+  let magnitudeA = 0
+  let magnitudeB = 0
+
+  for (let i = 0; i < vecA.length; i++) {
+    const a = vecA[i] ?? 0
+    const b = vecB[i] ?? 0
+    dotProduct += a * b
+    magnitudeA += a * a
+    magnitudeB += b * b
+  }
+
+  magnitudeA = Math.sqrt(magnitudeA)
+  magnitudeB = Math.sqrt(magnitudeB)
+
+  if (magnitudeA === 0 || magnitudeB === 0) {
+    return 0
+  }
+
+  return dotProduct / (magnitudeA * magnitudeB)
+}
+
+/**
  * Find opportunities semantically similar to user profile using Convex native vector search
  */
 export const findSimilarOpportunities = internalAction({
@@ -99,3 +129,30 @@ export const semanticSearchOpportunitiesAction = internalAction({
   },
 })
 
+/**
+ * Calculate semantic similarity between a text query and an existing embedding
+ */
+export const semanticSimilarity = internalAction({
+  args: {
+    text1: v.string(),
+    text2: v.string(),
+    embedding2: v.array(v.number()),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    // Generate embedding for text1
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: args.text1,
+    })
+
+    if (response.data.length === 0) {
+      throw new Error('Failed to generate embedding')
+    }
+
+    const embedding1: Array<number> = response.data[0].embedding
+
+    // Calculate cosine similarity
+    return cosineSimilarity(embedding1, args.embedding2)
+  },
+})

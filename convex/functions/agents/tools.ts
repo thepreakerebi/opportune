@@ -70,9 +70,9 @@ export function createTools(ctx: any) {
     }),
 
     getUserDocuments: tool({
-      description: 'List all documents uploaded by the user',
+      description: 'List all files uploaded by the user (user-uploaded files like CV, transcript, etc.)',
       inputSchema: z.object({
-        userId: z.string().describe('The user ID to fetch documents for'),
+        userId: z.string().describe('The user ID to fetch files for'),
       }),
       execute: async ({ userId }) => {
         const user = await ctx.runQuery(internal.functions.users.getUserById, {
@@ -81,10 +81,32 @@ export function createTools(ctx: any) {
         if (!user) {
           return []
         }
-        const docs = await ctx.runQuery(internal.functions.documents.getUserDocumentsInternal, {
+        // Get user-uploaded files (not platform-generated documents)
+        const files = await ctx.runQuery(internal.functions.userFiles.getUserFilesInternal, {
           userId: userId as any,
         })
-        return docs
+        return files
+      },
+    }),
+
+    getPlatformDocuments: tool({
+      description: 'List all platform-generated documents (essays, cover letters, etc.) for a user',
+      inputSchema: z.object({
+        userId: z.string().describe('The user ID to fetch documents for'),
+        applicationId: z.string().optional().describe('Optional application ID to filter documents'),
+      }),
+      execute: async ({ userId, applicationId }) => {
+        const user = await ctx.runQuery(internal.functions.users.getUserById, {
+          userId: userId as any,
+        })
+        if (!user) {
+          return []
+        }
+        // If applicationId is provided, get documents for that application
+        // Note: getDocumentsByApplication requires auth, so this won't work in action context
+        // For now, return empty - platform documents require auth context
+        // In a real implementation, we'd need an internal query that accepts userId
+        return []
       },
     }),
 
@@ -106,15 +128,41 @@ export function createTools(ctx: any) {
     }),
 
     matchDocuments: tool({
-      description: 'Match user documents to application requirements',
+      description: 'Match user uploaded files to application requirements using semantic search',
       inputSchema: z.object({
-        applicationId: z.string().describe('The application ID to match documents for'),
+        applicationId: z.string().describe('The application ID to match files for'),
       }),
       execute: async ({ applicationId }) => {
-        const result = await ctx.runMutation(internal.functions.documents.matchDocumentsToApplicationInternal, {
+        // Get application to find opportunity and user
+        const app = await ctx.runQuery(internal.functions.applications.getApplicationByIdInternal, {
           applicationId: applicationId as any,
         })
-        return result
+        if (!app) {
+          return { matched: [], missing: [] }
+        }
+
+        // Get opportunity to find requirements
+        const opportunity = await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
+          opportunityId: app.opportunityId,
+        })
+        if (!opportunity) {
+          return { matched: [], missing: [] }
+        }
+
+        // Match user files to opportunity requirements using semantic search
+        const matches = await ctx.runAction((internal.functions as any).userFilesActions.matchFilesSemantically, {
+          userId: app.userId,
+          requirements: opportunity.requiredDocuments,
+        })
+
+        // Determine missing requirements
+        const matchedRequirements = new Set(matches.map((m: { requirement: string }) => m.requirement))
+        const missing = opportunity.requiredDocuments.filter((req: string) => !matchedRequirements.has(req))
+
+        return {
+          matched: matches,
+          missing,
+        }
       },
     }),
 

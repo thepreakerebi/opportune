@@ -3,31 +3,33 @@ import { internalMutation, internalQuery, mutation, query } from '../_generated/
 import { internal } from '../_generated/api'
 import { requireAuth, requireOwnership } from './authHelpers'
 
+/**
+ * Platform-generated documents (AI-generated essays, assembled documents, etc.)
+ * These are created by the system, not uploaded by users
+ * User-uploaded files are in the userFiles table
+ */
+
 export const getUserDocuments = query({
   args: {},
   returns: v.array(
     v.object({
       _id: v.id('documents'),
       userId: v.id('users'),
+      applicationId: v.optional(v.id('applications')),
+      opportunityId: v.optional(v.id('opportunities')),
       name: v.string(),
       type: v.union(
-        v.literal('cv'),
-        v.literal('transcript'),
-        v.literal('reference'),
-        v.literal('passport'),
-        v.literal('certificate'),
         v.literal('essay'),
+        v.literal('cover_letter'),
+        v.literal('statement'),
+        v.literal('application_package'),
         v.literal('other'),
       ),
-      storageId: v.id('_storage'),
-      metadata: v.optional(
-        v.object({
-          size: v.number(),
-          contentType: v.string(),
-        }),
-      ),
+      content: v.optional(v.string()),
+      storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
+      updatedAt: v.number(),
     }),
   ),
   handler: async (ctx) => {
@@ -44,12 +46,10 @@ export const getUserDocuments = query({
 export const getDocumentsByType = query({
   args: {
     type: v.union(
-      v.literal('cv'),
-      v.literal('transcript'),
-      v.literal('reference'),
-      v.literal('passport'),
-      v.literal('certificate'),
       v.literal('essay'),
+      v.literal('cover_letter'),
+      v.literal('statement'),
+      v.literal('application_package'),
       v.literal('other'),
     ),
   },
@@ -57,25 +57,21 @@ export const getDocumentsByType = query({
     v.object({
       _id: v.id('documents'),
       userId: v.id('users'),
+      applicationId: v.optional(v.id('applications')),
+      opportunityId: v.optional(v.id('opportunities')),
       name: v.string(),
       type: v.union(
-        v.literal('cv'),
-        v.literal('transcript'),
-        v.literal('reference'),
-        v.literal('passport'),
-        v.literal('certificate'),
         v.literal('essay'),
+        v.literal('cover_letter'),
+        v.literal('statement'),
+        v.literal('application_package'),
         v.literal('other'),
       ),
-      storageId: v.id('_storage'),
-      metadata: v.optional(
-        v.object({
-          size: v.number(),
-          contentType: v.string(),
-        }),
-      ),
+      content: v.optional(v.string()),
+      storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
+      updatedAt: v.number(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -86,6 +82,47 @@ export const getDocumentsByType = query({
       .withIndex('by_userId_and_type', (q) => q.eq('userId', user._id).eq('type', args.type))
       .order('desc')
       .collect()
+  },
+})
+
+export const getDocumentById = query({
+  args: {
+    documentId: v.id('documents'),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id('documents'),
+      userId: v.id('users'),
+      applicationId: v.optional(v.id('applications')),
+      opportunityId: v.optional(v.id('opportunities')),
+      name: v.string(),
+      type: v.union(
+        v.literal('essay'),
+        v.literal('cover_letter'),
+        v.literal('statement'),
+        v.literal('application_package'),
+        v.literal('other'),
+      ),
+      content: v.optional(v.string()),
+      storageId: v.optional(v.id('_storage')),
+      tags: v.optional(v.array(v.string())),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx)
+
+    const document = await ctx.db.get(args.documentId)
+    if (!document) {
+      return null
+    }
+
+    // Verify ownership
+    await requireOwnership(ctx, document.userId, 'Document')
+
+    return document
   },
 })
 
@@ -105,51 +142,59 @@ export const getDocumentUrl = query({
     // Verify ownership
     await requireOwnership(ctx, document.userId, 'Document')
 
+    if (!document.storageId) {
+      return null
+    }
+
     return await ctx.storage.getUrl(document.storageId)
   },
 })
 
-export const uploadDocument = mutation({
+/**
+ * Create a platform-generated document (e.g., AI-generated essay)
+ */
+export const createDocument = mutation({
   args: {
     name: v.string(),
     type: v.union(
-      v.literal('cv'),
-      v.literal('transcript'),
-      v.literal('reference'),
-      v.literal('passport'),
-      v.literal('certificate'),
       v.literal('essay'),
+      v.literal('cover_letter'),
+      v.literal('statement'),
+      v.literal('application_package'),
       v.literal('other'),
     ),
-    storageId: v.id('_storage'),
-    metadata: v.optional(
-      v.object({
-        size: v.number(),
-        contentType: v.string(),
-      }),
-    ),
+    content: v.optional(v.string()),
+    applicationId: v.optional(v.id('applications')),
+    opportunityId: v.optional(v.id('opportunities')),
     tags: v.optional(v.array(v.string())),
   },
   returns: v.id('documents'),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx)
 
+    const now = Date.now()
     return await ctx.db.insert('documents', {
       userId: user._id,
+      applicationId: args.applicationId,
+      opportunityId: args.opportunityId,
       name: args.name,
       type: args.type,
-      storageId: args.storageId,
-      metadata: args.metadata,
+      content: args.content,
       tags: args.tags,
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     })
   },
 })
 
-export const updateDocumentMetadata = mutation({
+/**
+ * Update platform-generated document
+ */
+export const updateDocument = mutation({
   args: {
     documentId: v.id('documents'),
     name: v.optional(v.string()),
+    content: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
   },
   returns: v.null(),
@@ -166,13 +211,18 @@ export const updateDocumentMetadata = mutation({
 
     await ctx.db.patch(args.documentId, {
       name: args.name,
+      content: args.content,
       tags: args.tags,
+      updatedAt: Date.now(),
     })
 
     return null
   },
 })
 
+/**
+ * Delete platform-generated document
+ */
 export const deleteDocument = mutation({
   args: {
     documentId: v.id('documents'),
@@ -189,160 +239,67 @@ export const deleteDocument = mutation({
     // Verify ownership
     await requireOwnership(ctx, document.userId, 'Document')
 
-    await ctx.storage.delete(document.storageId)
+    // Delete file from storage if exists
+    if (document.storageId) {
+      await ctx.storage.delete(document.storageId)
+    }
+
+    // Delete document record
     await ctx.db.delete(args.documentId)
 
     return null
   },
 })
 
-export const matchDocumentsToApplication = mutation({
+/**
+ * Get documents for an application
+ */
+export const getDocumentsByApplication = query({
   args: {
     applicationId: v.id('applications'),
-  },
-  returns: v.object({
-    matched: v.array(
-      v.object({
-        documentId: v.id('documents'),
-        requirement: v.string(),
-      }),
-    ),
-    missing: v.array(v.string()),
-  }),
-  handler: async (ctx, args) => {
-    const user = await requireAuth(ctx)
-
-    const application = await ctx.db.get(args.applicationId)
-    if (!application) {
-      throw new Error('Application not found')
-    }
-
-    // Verify ownership
-    await requireOwnership(ctx, application.userId, 'Application')
-
-    const opportunity = await ctx.db.get(application.opportunityId)
-    if (!opportunity) {
-      throw new Error('Opportunity not found')
-    }
-
-    const documents = await ctx.db
-      .query('documents')
-      .withIndex('by_userId', (q) => q.eq('userId', user._id))
-      .collect()
-
-    const matched: Array<{ documentId: any; requirement: string }> = []
-    const missing: Array<string> = []
-
-    for (const requirement of opportunity.requiredDocuments) {
-      const reqLower = requirement.toLowerCase()
-      const doc = documents.find((d) => {
-        const nameLower = d.name.toLowerCase()
-        const typeMatch = reqLower.includes(d.type) || nameLower.includes(reqLower)
-        const tagMatch = d.tags?.some((tag) => reqLower.includes(tag.toLowerCase()))
-        return typeMatch || tagMatch
-      })
-
-      if (doc) {
-        matched.push({ documentId: doc._id, requirement })
-      } else {
-        missing.push(requirement)
-      }
-    }
-
-    return { matched, missing }
-  },
-})
-
-export const matchDocumentsToApplicationInternal = internalMutation({
-  args: {
-    applicationId: v.id('applications'),
-  },
-  returns: v.object({
-    matched: v.array(
-      v.object({
-        documentId: v.id('documents'),
-        requirement: v.string(),
-      }),
-    ),
-    missing: v.array(v.string()),
-  }),
-  handler: async (ctx, args) => {
-    const application = await ctx.db.get(args.applicationId)
-    if (!application) {
-      throw new Error('Application not found')
-    }
-
-    const opportunity = await ctx.db.get(application.opportunityId)
-    if (!opportunity) {
-      throw new Error('Opportunity not found')
-    }
-
-    const documents = await ctx.db
-      .query('documents')
-      .withIndex('by_userId', (q) => q.eq('userId', application.userId))
-      .collect()
-
-    const matched: Array<{ documentId: any; requirement: string }> = []
-    const missing: Array<string> = []
-
-    for (const requirement of opportunity.requiredDocuments) {
-      const reqLower = requirement.toLowerCase()
-      const doc = documents.find((d) => {
-        const nameLower = d.name.toLowerCase()
-        const typeMatch = reqLower.includes(d.type) || nameLower.includes(reqLower)
-        const tagMatch = d.tags?.some((tag) => reqLower.includes(tag.toLowerCase()))
-        return typeMatch || tagMatch
-      })
-
-      if (doc) {
-        matched.push({ documentId: doc._id, requirement })
-      } else {
-        missing.push(requirement)
-      }
-    }
-
-    return { matched, missing }
-  },
-})
-
-export const getUserDocumentsInternal = internalQuery({
-  args: {
-    userId: v.id('users'),
   },
   returns: v.array(
     v.object({
       _id: v.id('documents'),
       userId: v.id('users'),
+      applicationId: v.optional(v.id('applications')),
+      opportunityId: v.optional(v.id('opportunities')),
       name: v.string(),
       type: v.union(
-        v.literal('cv'),
-        v.literal('transcript'),
-        v.literal('reference'),
-        v.literal('passport'),
-        v.literal('certificate'),
         v.literal('essay'),
+        v.literal('cover_letter'),
+        v.literal('statement'),
+        v.literal('application_package'),
         v.literal('other'),
       ),
-      storageId: v.id('_storage'),
-      metadata: v.optional(
-        v.object({
-          size: v.number(),
-          contentType: v.string(),
-        }),
-      ),
+      content: v.optional(v.string()),
+      storageId: v.optional(v.id('_storage')),
       tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
+      updatedAt: v.number(),
     }),
   ),
   handler: async (ctx, args) => {
+    const user = await requireAuth(ctx)
+
+    // Verify application ownership
+    const application = await ctx.db.get(args.applicationId)
+    if (!application) {
+      throw new Error('Application not found')
+    }
+    await requireOwnership(ctx, application.userId, 'Application')
+
     return await ctx.db
       .query('documents')
-      .withIndex('by_userId', (q: any) => q.eq('userId', args.userId))
+      .withIndex('by_applicationId', (q) => q.eq('applicationId', args.applicationId))
       .order('desc')
       .collect()
   },
 })
 
+/**
+ * Internal query: Get document by ID
+ */
 export const getDocumentByIdInternal = internalQuery({
   args: {
     documentId: v.id('documents'),
@@ -351,27 +308,23 @@ export const getDocumentByIdInternal = internalQuery({
     v.object({
       _id: v.id('documents'),
       userId: v.id('users'),
+      applicationId: v.optional(v.id('applications')),
+      opportunityId: v.optional(v.id('opportunities')),
       name: v.string(),
       type: v.union(
-        v.literal('cv'),
-        v.literal('transcript'),
-        v.literal('reference'),
-        v.literal('passport'),
-        v.literal('certificate'),
         v.literal('essay'),
+        v.literal('cover_letter'),
+        v.literal('statement'),
+        v.literal('application_package'),
         v.literal('other'),
       ),
-      storageId: v.id('_storage'),
-      metadata: v.optional(
-        v.object({
-          size: v.number(),
-          contentType: v.string(),
-        }),
-      ),
-      tags: v.optional(v.array(v.string())),
+      content: v.optional(v.string()),
+      storageId: v.optional(v.id('_storage')),
       embedding: v.optional(v.array(v.number())),
       embeddingText: v.optional(v.string()),
+      tags: v.optional(v.array(v.string())),
       createdAt: v.number(),
+      updatedAt: v.number(),
     }),
     v.null(),
   ),
@@ -379,4 +332,3 @@ export const getDocumentByIdInternal = internalQuery({
     return await ctx.db.get(args.documentId)
   },
 })
-

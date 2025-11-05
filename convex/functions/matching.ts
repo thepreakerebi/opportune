@@ -148,14 +148,14 @@ Academic Status: ${user.academicStatus?.gpa ? `GPA: ${user.academicStatus.gpa}` 
 
     // Fetch all opportunities upfront for adaptive batch sizing
     const allOpportunities = await Promise.all(
-      args.opportunityIds.map(async (oppId) => {
+      args.opportunityIds.map(async (oppId): Promise<any> => {
         return await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
           opportunityId: oppId,
         })
       }),
     )
 
-    const validOpportunities = allOpportunities.filter((opp): opp is NonNullable<typeof opp> => opp !== null)
+    const validOpportunities = allOpportunities.filter((opp: any): opp is NonNullable<typeof opp> => opp !== null)
 
     if (validOpportunities.length === 0) {
       return {
@@ -207,7 +207,7 @@ Academic Status: ${user.academicStatus?.gpa ? `GPA: ${user.academicStatus.gpa}` 
           // Build opportunities summary with truncated requirements
           const opportunitiesSummary = batch
             .map(
-              (opp, idx) => `
+              (opp: any, idx: number) => `
 Opportunity ${idx + 1}:
 - ID: ${opp._id}
 - Title: ${opp.title}
@@ -495,14 +495,14 @@ export const tagRecommendedOpportunities = internalAction({
     // Run AI-powered matching (uses adaptive batch sizing)
     const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
       userId: args.userId,
-      opportunityIds: allOpportunities.map((opp) => opp._id),
+      opportunityIds: allOpportunities.map((opp: any) => opp._id),
       // batchSize will be calculated adaptively based on opportunity complexity
     })
 
     // Tag matched opportunities
     await ctx.runMutation((internal.functions as any).matchingMutations.tagOpportunitiesFromMatches, {
       userId: args.userId,
-      matches: matchingResult.matches.map((m) => ({
+      matches: matchingResult.matches.map((m: { opportunityId: any; score: number }) => ({
         opportunityId: m.opportunityId,
         score: m.score,
       })),
@@ -560,14 +560,14 @@ export const runDailyAIMatchingWorkflow = internalAction({
         // Run AI-powered matching (uses adaptive batch sizing)
         const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
           userId: user._id,
-          opportunityIds: allOpportunities.map((opp) => opp._id),
+          opportunityIds: allOpportunities.map((opp: any) => opp._id),
           // batchSize will be calculated adaptively based on opportunity complexity
         })
 
         // Save matched opportunities to user-specific mapping table
         const saveResult = await ctx.runMutation((internal.functions as any).matchingMutations.saveUserOpportunityMatches, {
           userId: user._id,
-          matches: matchingResult.matches.map((m) => ({
+          matches: matchingResult.matches.map((m: { opportunityId: any; score: number; reasoning: string; eligibilityFactors: Array<string> }) => ({
             opportunityId: m.opportunityId,
             score: m.score,
             reasoning: m.reasoning,

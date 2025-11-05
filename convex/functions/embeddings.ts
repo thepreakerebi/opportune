@@ -212,6 +212,51 @@ export const generateDocumentEmbedding = internalAction({
 })
 
 /**
+ * Generate embedding for user file
+ * Extracts text from PDF or generates description from file metadata
+ */
+export const generateUserFileEmbedding = internalAction({
+  args: {
+    fileId: v.id('userFiles'),
+  },
+  returns: v.object({
+    embedding: v.array(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const file = await ctx.runQuery(internal.functions.userFiles.getUserFileByIdInternal, {
+      fileId: args.fileId,
+    })
+    if (!file) {
+      throw new Error('File not found')
+    }
+
+    // For PDFs, we would extract text here (requires PDF parsing library)
+    // For images, we would use OCR or generate description based on metadata
+    // For now, use filename, fileType, and tags to create embedding text
+    const embeddingText = `${file.fileType} ${file.fileName} ${file.tags?.join(' ') ?? ''}`.trim()
+
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: embeddingText,
+    })
+
+    if (response.data.length === 0) {
+      throw new Error('Failed to generate embedding')
+    }
+    const embedding = response.data[0].embedding
+
+    // Store embedding and text
+    await ctx.runMutation((internal.functions as any).embeddings.mutations.storeUserFileEmbedding, {
+      fileId: args.fileId,
+      embedding,
+      embeddingText,
+    })
+
+    return { embedding }
+  },
+})
+
+/**
  * Batch generate embeddings for all opportunities without embeddings
  */
 export const batchGenerateOpportunityEmbeddings = internalAction({

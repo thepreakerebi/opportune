@@ -140,12 +140,12 @@ export const opportunityMatchingAgent = internalAction({
     // Use the new AI-powered matching function
     const matchingResult = await ctx.runAction(internal.functions.matching.matchOpportunitiesForUser, {
       userId: args.userId,
-      opportunityIds: allOpportunities.map((opp) => opp._id),
+      opportunityIds: allOpportunities.map((opp: any) => opp._id),
       batchSize: 20,
     })
 
     return {
-      matchedOpportunities: matchingResult.matches.map((m) => ({
+      matchedOpportunities: matchingResult.matches.map((m: { opportunityId: any; score: number; reasoning: string }) => ({
         opportunityId: m.opportunityId,
         score: m.score,
         reasoning: m.reasoning,
@@ -161,25 +161,56 @@ export const documentMatchingAgent = internalAction({
   returns: v.object({
     matched: v.array(
       v.object({
-        documentId: v.id('documents'),
+        fileId: v.id('userFiles'),
         requirement: v.string(),
         confidence: v.number(),
       }),
     ),
     missing: v.array(v.string()),
   }),
-  handler: async (ctx, args) => {
-    const result: any = await ctx.runMutation(internal.functions.documents.matchDocumentsToApplicationInternal, {
+  handler: async (ctx, args): Promise<{
+    matched: Array<{
+      fileId: any
+      requirement: string
+      confidence: number
+    }>
+    missing: Array<string>
+  }> => {
+    // Get application to find opportunity and user
+    const app: any = await ctx.runQuery(internal.functions.applications.getApplicationByIdInternal, {
       applicationId: args.applicationId,
     })
 
+    if (!app) {
+      throw new Error('Application not found')
+    }
+
+    // Get opportunity to find requirements
+    const opportunity: any = await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
+      opportunityId: app.opportunityId,
+    })
+
+    if (!opportunity) {
+      throw new Error('Opportunity not found')
+    }
+
+    // Match user files to requirements using semantic search
+    const matches: Array<{ fileId: any; requirement: string; matchScore: number }> = await ctx.runAction((internal.functions as any).userFilesActions.matchFilesSemantically, {
+      userId: app.userId,
+      requirements: opportunity.requiredDocuments,
+    })
+
+    // Determine missing requirements
+    const matchedRequirements = new Set(matches.map((m: { requirement: string }) => m.requirement))
+    const missing = opportunity.requiredDocuments.filter((req: string) => !matchedRequirements.has(req))
+
     return {
-      matched: result.matched.map((m: any) => ({
-        documentId: m.documentId,
+      matched: matches.map((m: { fileId: any; requirement: string; matchScore: number }) => ({
+        fileId: m.fileId,
         requirement: m.requirement,
-        confidence: 0.8,
+        confidence: m.matchScore / 100, // Convert 0-100 score to 0-1 confidence
       })),
-      missing: result.missing,
+      missing,
     }
   },
 })

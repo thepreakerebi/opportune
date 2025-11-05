@@ -24,7 +24,9 @@ import type * as functions_firecrawlMutations from "../functions/firecrawlMutati
 import type * as functions_matching from "../functions/matching.js";
 import type * as functions_matchingMutations from "../functions/matchingMutations.js";
 import type * as functions_opportunities from "../functions/opportunities.js";
+import type * as functions_opportunitiesSearch from "../functions/opportunitiesSearch.js";
 import type * as functions_semanticSearch from "../functions/semanticSearch.js";
+import type * as functions_userFiles from "../functions/userFiles.js";
 import type * as functions_users from "../functions/users.js";
 import type * as functions_validation from "../functions/validation.js";
 import type * as http from "../http.js";
@@ -61,7 +63,9 @@ declare const fullApi: ApiFromModules<{
   "functions/matching": typeof functions_matching;
   "functions/matchingMutations": typeof functions_matchingMutations;
   "functions/opportunities": typeof functions_opportunities;
+  "functions/opportunitiesSearch": typeof functions_opportunitiesSearch;
   "functions/semanticSearch": typeof functions_semanticSearch;
+  "functions/userFiles": typeof functions_userFiles;
   "functions/users": typeof functions_users;
   "functions/validation": typeof functions_validation;
   http: typeof http;

@@ -110,33 +110,6 @@ export default defineSchema({
     .index('by_opportunityId', ['opportunityId'])
     .index('by_userId_and_status', ['userId', 'status']),
 
-  documents: defineTable({
-    userId: v.id('users'),
-    name: v.string(),
-    type: v.union(
-      v.literal('cv'),
-      v.literal('transcript'),
-      v.literal('reference'),
-      v.literal('passport'),
-      v.literal('certificate'),
-      v.literal('essay'),
-      v.literal('other'),
-    ),
-    storageId: v.id('_storage'),
-    metadata: v.optional(
-      v.object({
-        size: v.number(),
-        contentType: v.string(),
-      }),
-    ),
-    tags: v.optional(v.array(v.string())),
-    embedding: v.optional(v.array(v.number())),
-    embeddingText: v.optional(v.string()),
-    createdAt: v.number(),
-  })
-    .index('by_userId', ['userId'])
-    .index('by_userId_and_type', ['userId', 'type']),
-
   alerts: defineTable({
     userId: v.id('users'),
     applicationId: v.optional(v.id('applications')),
@@ -194,6 +167,69 @@ export default defineSchema({
     .index('by_opportunityId', ['opportunityId'])
     .index('by_userId_and_matchType', ['userId', 'matchType'])
     .index('by_userId_and_matchScore', ['userId', 'matchScore']),
+
+  // User-uploaded files (CV, transcript, passport, etc.)
+  // Uses Convex file storage, linked via storageId
+  userFiles: defineTable({
+    userId: v.id('users'),
+    fileName: v.string(),
+    fileType: v.union(
+      v.literal('cv'),
+      v.literal('transcript'),
+      v.literal('reference'),
+      v.literal('passport'),
+      v.literal('certificate'),
+      v.literal('other'),
+    ),
+    storageId: v.id('_storage'), // Reference to Convex storage
+    contentType: v.string(), // MIME type (e.g., 'application/pdf', 'image/jpeg')
+    size: v.number(), // File size in bytes
+    // Embeddings for semantic matching to opportunity requirements
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
+    // Additional metadata
+    tags: v.optional(v.array(v.string())),
+    uploadedAt: v.number(),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_userId_and_fileType', ['userId', 'fileType'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 1536,
+    }),
+
+  // Platform-generated documents (AI-generated essays, assembled documents, etc.)
+  // These are created by the system, not uploaded by users
+  documents: defineTable({
+    userId: v.id('users'),
+    applicationId: v.optional(v.id('applications')), // Link to specific application if applicable
+    opportunityId: v.optional(v.id('opportunities')), // Link to opportunity if applicable
+    name: v.string(),
+    type: v.union(
+      v.literal('essay'),
+      v.literal('cover_letter'),
+      v.literal('statement'),
+      v.literal('application_package'),
+      v.literal('other'),
+    ),
+    content: v.optional(v.string()), // Text content for platform-generated documents
+    storageId: v.optional(v.id('_storage')), // Optional: if document is stored as file
+    // Embeddings for matching to essay prompts/requirements
+    embedding: v.optional(v.array(v.number())),
+    embeddingText: v.optional(v.string()),
+    // Metadata
+    tags: v.optional(v.array(v.string())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_applicationId', ['applicationId'])
+    .index('by_opportunityId', ['opportunityId'])
+    .index('by_userId_and_type', ['userId', 'type'])
+    .vectorIndex('by_embedding', {
+      vectorField: 'embedding',
+      dimensions: 1536,
+    }),
 
   numbers: defineTable({
     value: v.number(),

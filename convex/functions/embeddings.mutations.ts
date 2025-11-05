@@ -61,3 +61,22 @@ export const storeDocumentEmbedding = internalMutation({
   },
 })
 
+/**
+ * Store user file embedding in database
+ * This must be in a V8 file (no 'use node') because it's a mutation
+ */
+export const storeUserFileEmbedding = internalMutation({
+  args: {
+    fileId: v.id('userFiles'),
+    embedding: v.array(v.number()),
+    embeddingText: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.fileId, {
+      embedding: args.embedding,
+      embeddingText: args.embeddingText,
+    })
+    return null
+  },
+})
