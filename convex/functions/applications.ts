@@ -452,3 +452,45 @@ export const getApplicationByIdInternal = internalQuery({
   },
 })
 
+export const getUserApplicationsInternal = internalQuery({
+  args: {
+    userId: v.id('users'),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('applications'),
+      userId: v.id('users'),
+      opportunityId: v.id('opportunities'),
+      status: v.union(
+        v.literal('saved'),
+        v.literal('in_progress'),
+        v.literal('submitted'),
+        v.literal('awaiting_docs'),
+      ),
+      checklist: v.array(
+        v.object({
+          item: v.string(),
+          description: v.optional(v.string()),
+          completed: v.boolean(),
+          required: v.boolean(),
+          category: v.optional(
+            v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+          ),
+        }),
+      ),
+      progress: v.number(),
+      submittedAt: v.optional(v.number()),
+      notes: v.optional(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('applications')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .order('desc')
+      .collect()
+  },
+})
+

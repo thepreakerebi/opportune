@@ -1,5 +1,5 @@
 import { v } from 'convex/values'
-import { internalAction, internalMutation } from '../_generated/server'
+import { internalAction, internalMutation, internalQuery } from '../_generated/server'
 import { internal } from '../_generated/api'
 
 /**
@@ -276,6 +276,42 @@ export const tagOpportunitiesFromMatches = internalMutation({
     }
 
     return { tagged }
+  },
+})
+
+/**
+ * Get user opportunity matches (internal query for tools)
+ */
+export const getUserOpportunityMatchesInternal = internalQuery({
+  args: {
+    userId: v.id('users'),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('userOpportunityMatches'),
+      userId: v.id('users'),
+      opportunityId: v.id('opportunities'),
+      matchScore: v.number(),
+      matchType: v.union(
+        v.literal('daily_automated'),
+        v.literal('user_search'),
+        v.literal('manual'),
+      ),
+      matchedAt: v.number(),
+      reasoning: v.optional(v.string()),
+      eligibilityFactors: v.optional(v.array(v.string())),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const matches = await ctx.db
+      .query('userOpportunityMatches')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .collect()
+
+    // Sort by match score and limit
+    const sortedMatches = matches.sort((a, b) => b.matchScore - a.matchScore)
+    return sortedMatches.slice(0, args.limit ?? 20)
   },
 })
 

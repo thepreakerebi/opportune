@@ -1,12 +1,75 @@
 'use node'
 
-import { generateText, stepCountIs } from 'ai'
+import { generateText, stepCountIs, streamText } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { v } from 'convex/values'
-import { internalAction } from '../../_generated/server'
-import { internal } from '../../_generated/api'
+import { action, internalAction } from '../../_generated/server'
+import { api, internal } from '../../_generated/api'
 import { formatEducationLevels } from '../educationHelpers'
 import { createTools } from './tools'
+
+export const chatAgent = action({
+  args: {
+    question: v.string(),
+    conversationHistory: v.optional(
+      v.array(
+        v.object({
+          role: v.union(v.literal('user'), v.literal('assistant')),
+          content: v.string(),
+        }),
+      ),
+    ),
+  },
+  returns: v.any(), // Stream response (Response object)
+  handler: async (ctx, args): Promise<any> => {
+    // Get authenticated user via query
+    const user = await ctx.runQuery(api.functions.users.getCurrentUser, {})
+    if (!user) {
+      throw new Error('Not authenticated')
+    }
+
+    // Create tools with context
+    const tools: any = createTools(ctx)
+
+    // Build conversation history
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      {
+        role: 'assistant',
+        content: `You are Opportune, an AI assistant specialized in helping students discover, track, and apply for scholarships, grants, awards, and fellowships.
+
+Your role:
+- Answer questions about opportunities (scholarships, grants, etc.)
+- Help users understand application requirements and deadlines
+- Provide guidance on application status and progress
+- Explain eligibility criteria and match opportunities to user profiles
+- Offer advice on application preparation
+
+You have access to:
+- User's profile information (education level, discipline, interests)
+- All opportunities in the database
+- User's applications and their status
+- User's uploaded documents (CV, transcripts, etc.)
+- Application checklists and requirements
+
+Be helpful, friendly, and provide specific, actionable information. When discussing opportunities, mention key details like deadlines, award amounts, and requirements. When discussing applications, reference their current status and next steps.`,
+      },
+      ...(args.conversationHistory ?? []),
+      {
+        role: 'user',
+        content: args.question,
+      },
+    ]
+
+    // Generate streaming response using AI with tools
+    const result = await streamText({
+      model: openai('gpt-4o'),
+      tools,
+      messages,
+    })
+
+    return result.toTextStreamResponse()
+  },
+})
 
 export const applicationWorkflowAgent = internalAction({
   args: {

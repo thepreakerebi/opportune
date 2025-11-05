@@ -244,6 +244,107 @@ export function createTools(ctx: any) {
         }
       },
     }),
+
+    getUserApplications: tool({
+      description: 'Get all applications for a user, including their status and progress',
+      inputSchema: z.object({
+        userId: z.string().describe('The user ID to fetch applications for'),
+        status: z
+          .enum(['saved', 'in_progress', 'submitted', 'awaiting_docs'])
+          .optional()
+          .describe('Optional status filter'),
+      }),
+      execute: async ({ userId, status }) => {
+        const user = await ctx.runQuery(internal.functions.users.getUserById, {
+          userId: userId as any,
+        })
+        if (!user) {
+          return []
+        }
+
+        // Get all user applications
+        const applications = await ctx.runQuery(internal.functions.applications.getUserApplicationsInternal, {
+          userId: userId as any,
+        })
+
+        // Filter by status if provided
+        if (status) {
+          return applications.filter((app: any) => app.status === status)
+        }
+
+        return applications
+      },
+    }),
+
+    getUserOpportunities: tool({
+      description: 'Get opportunities that match or are recommended for a user',
+      inputSchema: z.object({
+        userId: z.string().describe('The user ID to fetch opportunities for'),
+        limit: z.number().optional().describe('Maximum number of opportunities to return'),
+      }),
+      execute: async ({ userId, limit }) => {
+        const user = await ctx.runQuery(internal.functions.users.getUserById, {
+          userId: userId as any,
+        })
+        if (!user) {
+          return []
+        }
+
+        // Get user-specific matches from the mapping table
+        const userMatches = await ctx.runQuery(internal.functions.matchingMutations.getUserOpportunityMatchesInternal, {
+          userId: userId as any,
+          limit: limit ?? 20,
+        })
+
+        // Fetch full opportunity details for each match
+        const opportunities = []
+        for (const match of userMatches) {
+          const opp = await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
+            opportunityId: match.opportunityId,
+          })
+          if (opp) {
+            opportunities.push({
+              ...opp,
+              matchScore: match.matchScore,
+              matchReasoning: match.reasoning,
+            })
+          }
+        }
+
+        return opportunities
+      },
+    }),
+
+    searchOpportunitiesByQuery: tool({
+      description: 'Search for opportunities by keywords or description',
+      inputSchema: z.object({
+        query: z.string().describe('Search query or keywords'),
+        limit: z.number().optional().describe('Maximum number of results'),
+      }),
+      execute: async ({ query, limit }) => {
+        // Use semantic search to find opportunities
+        const results = await ctx.runAction((internal.functions as any).semanticSearch.semanticSearchOpportunitiesAction, {
+          query,
+          limit: limit ?? 10,
+        })
+
+        // Fetch full opportunity details
+        const opportunities = []
+        for (const result of results) {
+          const opp = await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
+            opportunityId: result.opportunityId,
+          })
+          if (opp) {
+            opportunities.push({
+              ...opp,
+              similarityScore: result.similarityScore,
+            })
+          }
+        }
+
+        return opportunities
+      },
+    }),
   }
 }
 
