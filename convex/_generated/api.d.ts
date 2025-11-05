@@ -13,6 +13,7 @@ import type * as crons from "../crons.js";
 import type * as functions_agents_tools from "../functions/agents/tools.js";
 import type * as functions_agents_workflows from "../functions/agents/workflows.js";
 import type * as functions_alerts from "../functions/alerts.js";
+import type * as functions_applicationWorkflow from "../functions/applicationWorkflow.js";
 import type * as functions_applications from "../functions/applications.js";
 import type * as functions_authHelpers from "../functions/authHelpers.js";
 import type * as functions_documents from "../functions/documents.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "functions/agents/tools": typeof functions_agents_tools;
   "functions/agents/workflows": typeof functions_agents_workflows;
   "functions/alerts": typeof functions_alerts;
+  "functions/applicationWorkflow": typeof functions_applicationWorkflow;
   "functions/applications": typeof functions_applications;
   "functions/authHelpers": typeof functions_authHelpers;
   "functions/documents": typeof functions_documents;

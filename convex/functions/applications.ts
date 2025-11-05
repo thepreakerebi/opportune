@@ -19,8 +19,12 @@ export const getUserApplications = query({
       checklist: v.array(
         v.object({
           item: v.string(),
+          description: v.optional(v.string()),
           completed: v.boolean(),
           required: v.boolean(),
+          category: v.optional(
+            v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+          ),
         }),
       ),
       progress: v.number(),
@@ -59,8 +63,12 @@ export const getApplicationById = query({
       checklist: v.array(
         v.object({
           item: v.string(),
+          description: v.optional(v.string()),
           completed: v.boolean(),
           required: v.boolean(),
+          category: v.optional(
+            v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+          ),
         }),
       ),
       progress: v.number(),
@@ -109,8 +117,12 @@ export const getApplicationsByStatus = query({
       checklist: v.array(
         v.object({
           item: v.string(),
+          description: v.optional(v.string()),
           completed: v.boolean(),
           required: v.boolean(),
+          category: v.optional(
+            v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+          ),
         }),
       ),
       progress: v.number(),
@@ -156,6 +168,7 @@ export const createApplication = mutation({
       return existing._id
     }
 
+    // Create basic checklist from required documents (will be enhanced by AI)
     const checklist = opportunity.requiredDocuments.map((doc) => ({
       item: doc,
       completed: false,
@@ -173,7 +186,8 @@ export const createApplication = mutation({
       updatedAt: now,
     })
 
-    await ctx.scheduler.runAfter(0, internal.functions.applications.generateChecklist, {
+    // Generate AI-powered checklist asynchronously
+    await ctx.scheduler.runAfter(0, internal.functions.applicationWorkflow.generateApplicationChecklist, {
       applicationId,
     })
 
@@ -302,9 +316,23 @@ export const deleteApplication = mutation({
   },
 })
 
-export const generateChecklist = internalMutation({
+/**
+ * Update checklist (internal mutation for AI-generated checklists)
+ */
+export const updateChecklist = internalMutation({
   args: {
     applicationId: v.id('applications'),
+    checklist: v.array(
+      v.object({
+        item: v.string(),
+        description: v.optional(v.string()),
+        completed: v.boolean(),
+        required: v.boolean(),
+        category: v.optional(
+          v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+        ),
+      }),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -313,19 +341,13 @@ export const generateChecklist = internalMutation({
       return null
     }
 
-    const opportunity = await ctx.db.get(application.opportunityId)
-    if (!opportunity) {
-      return null
-    }
-
-    const checklist = opportunity.requiredDocuments.map((doc) => ({
-      item: doc,
-      completed: false,
-      required: true,
-    }))
+    // Recalculate progress
+    const completedCount = args.checklist.filter((item) => item.completed).length
+    const progress = args.checklist.length > 0 ? Math.round((completedCount / args.checklist.length) * 100) : 0
 
     await ctx.db.patch(args.applicationId, {
-      checklist,
+      checklist: args.checklist,
+      progress,
       updatedAt: Date.now(),
     })
 
@@ -351,8 +373,12 @@ export const getApplicationByIdInternal = internalQuery({
       checklist: v.array(
         v.object({
           item: v.string(),
+          description: v.optional(v.string()),
           completed: v.boolean(),
           required: v.boolean(),
+          category: v.optional(
+            v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+          ),
         }),
       ),
       progress: v.number(),

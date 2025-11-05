@@ -96,8 +96,12 @@ export default defineSchema({
     checklist: v.array(
       v.object({
         item: v.string(),
+        description: v.optional(v.string()), // Additional context/instructions for the item
         completed: v.boolean(),
         required: v.boolean(),
+        category: v.optional(
+          v.union(v.literal('document'), v.literal('essay'), v.literal('form'), v.literal('other')),
+        ), // Category of checklist item
       }),
     ),
     progress: v.number(),
