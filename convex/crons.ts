@@ -19,6 +19,14 @@ crons.interval(
   {},
 )
 
+// Generate auto-nudges daily
+crons.interval(
+  'generate-auto-nudges',
+  { hours: 24 },
+  internal.functions.alerts.generateAutoNudges,
+  {},
+)
+
 // Daily general Firecrawl search at 2 AM UTC
 // Runs broad "catch-all" search prompts to discover all opportunities
 // After completion, triggers automated AI-powered matching workflow

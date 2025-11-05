@@ -191,6 +191,11 @@ export const createApplication = mutation({
       applicationId,
     })
 
+    // Create initial alert for new application
+    await ctx.scheduler.runAfter(0, internal.functions.alerts.createApplicationAlert, {
+      applicationId,
+    })
+
     return applicationId
   },
 })
@@ -217,10 +222,35 @@ export const updateApplicationStatus = mutation({
     // Verify ownership
     await requireOwnership(ctx, application.userId, 'Application')
 
+    const oldStatus = application.status
+
+    // Validate status transition
+    const validTransitions: Record<string, Array<string>> = {
+      saved: ['in_progress', 'submitted'],
+      in_progress: ['saved', 'submitted', 'awaiting_docs'],
+      submitted: [], // Cannot transition from submitted
+      awaiting_docs: ['in_progress', 'submitted'],
+    }
+
+    const allowedStatuses = validTransitions[oldStatus] ?? []
+    if (!allowedStatuses.includes(args.status) && oldStatus !== args.status) {
+      throw new Error(`Invalid status transition: cannot change from ${oldStatus} to ${args.status}`)
+    }
+
+    // Auto-update status based on progress if transitioning to in_progress
+    const finalStatus = args.status
+
     await ctx.db.patch(args.applicationId, {
-      status: args.status,
-      submittedAt: args.status === 'submitted' ? Date.now() : application.submittedAt,
+      status: finalStatus,
+      submittedAt: finalStatus === 'submitted' ? Date.now() : application.submittedAt,
       updatedAt: Date.now(),
+    })
+
+    // Create alert for status change
+    await ctx.scheduler.runAfter(0, internal.functions.alerts.createStatusChangeAlert, {
+      applicationId: args.applicationId,
+      oldStatus,
+      newStatus: finalStatus,
     })
 
     return null
@@ -253,13 +283,41 @@ export const updateChecklistItem = mutation({
       }
 
       const completedCount = checklist.filter((item) => item.completed).length
-      const progress = Math.round((completedCount / checklist.length) * 100)
+      const totalCount = checklist.length
+      const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+
+      // Auto-update status based on progress
+      let newStatus = application.status
+      const allRequiredComplete = checklist.filter((item) => item.required).every((item) => item.completed)
+
+      // If all required items are complete and status is 'saved', suggest moving to 'in_progress'
+      // Don't auto-change status if it's already in_progress or submitted
+      if (allRequiredComplete && application.status === 'saved' && progress === 100) {
+        // Status can be updated by user, but we update progress
+        // Could create an alert suggesting they move to in_progress
+      }
+
+      // If not all required items are complete and status is submitted, revert to in_progress
+      // (This handles edge case where user unchecks an item after submission)
+      if (!allRequiredComplete && application.status === 'submitted') {
+        newStatus = 'awaiting_docs'
+      }
 
       await ctx.db.patch(args.applicationId, {
         checklist,
         progress,
+        status: newStatus,
         updatedAt: Date.now(),
       })
+
+      // If status changed, create alert
+      if (newStatus !== application.status) {
+        await ctx.scheduler.runAfter(0, internal.functions.alerts.createStatusChangeAlert, {
+          applicationId: args.applicationId,
+          oldStatus: application.status,
+          newStatus,
+        })
+      }
     }
 
     return null
