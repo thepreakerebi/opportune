@@ -240,6 +240,7 @@ export const getOpportunityByIdInternal = internalQuery({
   returns: v.union(
     v.object({
       _id: v.id('opportunities'),
+      _creationTime: v.number(),
       title: v.string(),
       provider: v.string(),
       description: v.string(),

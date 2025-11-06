@@ -50,13 +50,18 @@ export const generateOpportunityEmbedding = internalAction({
     embedding: v.array(v.number()),
   }),
   handler: async (ctx, args) => {
+    console.log(`[DEBUG] Generating embedding for opportunity: ${args.opportunityId}`)
+    
     const opportunity = await ctx.runQuery(internal.functions.opportunities.getOpportunityByIdInternal, {
       opportunityId: args.opportunityId,
     })
 
     if (!opportunity) {
+      console.error(`[ERROR] Opportunity not found: ${args.opportunityId}`)
       throw new Error('Opportunity not found')
     }
+
+    console.log(`[DEBUG] Opportunity found: ${opportunity.title}`)
 
     // Combine text for embedding: title + description + requirements
     const embeddingText = [
@@ -69,15 +74,20 @@ export const generateOpportunityEmbedding = internalAction({
       .filter(Boolean)
       .join(' ')
 
+    console.log(`[DEBUG] Embedding text length: ${embeddingText.length} characters`)
+
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: embeddingText,
     })
 
     if (response.data.length === 0) {
+      console.error(`[ERROR] Failed to generate embedding for opportunity: ${args.opportunityId}`)
       throw new Error('Failed to generate embedding')
     }
     const embedding = response.data[0].embedding
+
+    console.log(`[DEBUG] Generated embedding with ${embedding.length} dimensions`)
 
     // Store embedding and text
     await ctx.runMutation((internal.functions as any).embeddings.mutations.storeOpportunityEmbedding, {
@@ -85,6 +95,8 @@ export const generateOpportunityEmbedding = internalAction({
       embedding,
       embeddingText,
     })
+
+    console.log(`[SUCCESS] Successfully stored embedding for opportunity: ${args.opportunityId}`)
 
     return { embedding }
   },
@@ -406,27 +418,38 @@ export const batchGenerateOpportunityEmbeddings = internalAction({
   },
   returns: v.object({
     processed: v.number(),
+    errors: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
     const opportunities = await ctx.runQuery(internal.functions.opportunities.getOpportunitiesWithoutEmbeddings, {
       limit: args.limit ?? 50,
     })
 
+    console.log(`[DEBUG] Found ${opportunities.length} opportunities without embeddings`)
+
     let processed = 0
+    const errors: Array<string> = []
+    
     for (const opp of opportunities) {
       try {
+        console.log(`[DEBUG] Processing opportunity ${opp._id}...`)
         await ctx.runAction(internal.functions.embeddings.generateOpportunityEmbedding, {
           opportunityId: opp._id,
         })
         processed++
+        console.log(`[SUCCESS] Generated embedding for opportunity ${opp._id}`)
         // Small delay to avoid rate limits
         await new Promise((resolve) => setTimeout(resolve, 100))
-      } catch (error) {
-        console.error(`Failed to generate embedding for opportunity ${opp._id}:`, error)
+      } catch (error: any) {
+        const errorMsg = `Failed to generate embedding for opportunity ${opp._id}: ${error.message}`
+        console.error(`[ERROR] ${errorMsg}`)
+        errors.push(errorMsg)
       }
     }
 
-    return { processed }
+    console.log(`[DEBUG] Batch processing complete: ${processed} processed, ${errors.length} errors`)
+
+    return { processed, errors }
   },
 })
 

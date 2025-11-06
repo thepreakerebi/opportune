@@ -1,5 +1,5 @@
 import { v } from 'convex/values'
-import { internalMutation } from '../_generated/server'
+import { internalMutation, internalQuery } from '../_generated/server'
 import { internal } from '../_generated/api'
 
 export const saveSearchJob = internalMutation({
@@ -113,6 +113,36 @@ export const deduplicateResults = internalMutation({
     }
 
     return { unique, duplicates }
+  },
+})
+
+/**
+ * Get search job by ID (for testing/debugging)
+ */
+export const getSearchJobById = internalQuery({
+  args: {
+    jobId: v.id('searchJobs'),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id('searchJobs'),
+      type: v.union(v.literal('general_search'), v.literal('profile_search')),
+      status: v.union(
+        v.literal('pending'),
+        v.literal('running'),
+        v.literal('completed'),
+        v.literal('failed'),
+      ),
+      searchQuery: v.string(),
+      resultsCount: v.optional(v.number()),
+      errorMessage: v.optional(v.string()),
+      scheduledFor: v.number(),
+      completedAt: v.optional(v.number()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.jobId)
   },
 })
 
